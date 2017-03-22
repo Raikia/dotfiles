@@ -21,7 +21,6 @@ antigen apply
 
 
 source ~/.config/zsh/raikia_theme.zsh-theme
-
 ## Variables
 # Terminal colors
 export CLICOLOR=1
@@ -39,11 +38,6 @@ export EDITOR=vim
 
 ## Configurations
 
-shopt -s cdspell
-shopt -s checkwinsize
-shopt -s cmdhist
-shopt -s histappend
-set -o vi
 
 ## Aliases
 alias ei3='vim ~/.config/i3/config'
@@ -61,7 +55,6 @@ alias fhere='find . -iname '
 
 
 ## Other
-complete -cf sudo
 
 
 ## Functions
