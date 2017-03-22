@@ -1,0 +1,114 @@
+// vim:ts=4:sw=4:et
+{
+    // splitv split container with 2 children
+    "border": "normal",
+    "floating": "auto_off",
+    "layout": "splitv",
+    "percent": 0.5,
+    "type": "con",
+    "nodes": [
+        {
+            "border": "normal",
+            "current_border_width": 2,
+            "floating": "auto_off",
+            "geometry": {
+               "height": 1043,
+               "width": 1920,
+               "x": 1920,
+               "y": 37
+            },
+            "name": "Skype for Linux Beta",
+            "percent": 0.6,
+            "swallows": [
+               {
+                "class": "^skypeforlinux$",
+               // "instance": "^skypeforlinux$",
+               // "title": "^Skype\\ for\\ Linux\\ Beta$",
+               // "transient_for": "^$",
+               // "window_role": "^browser\\-window$"
+               }
+            ],
+            "type": "con"
+        },
+        {
+            "border": "normal",
+            "current_border_width": 2,
+            "floating": "auto_off",
+            "geometry": {
+               "height": 362,
+               "width": 642,
+               "x": 0,
+               "y": 0
+            },
+            "name": "irssi",
+            "percent": 0.4,
+            "swallows": [
+               {
+                "class": "^Termite$",
+               // "instance": "^termite$",
+               // "title": "^irssi$",
+               // "transient_for": "^$"
+               }
+            ],
+            "type": "con"
+        }
+    ]
+}
+
+{
+    // splitv split container with 2 children
+    "border": "normal",
+    "floating": "auto_off",
+    "layout": "splitv",
+    "percent": 0.5,
+    "type": "con",
+    "nodes": [
+        {
+            "border": "normal",
+            "current_border_width": 2,
+            "floating": "auto_off",
+            "geometry": {
+               "height": 1043,
+               "width": 958,
+               "x": 2882,
+               "y": 37
+            },
+            "name": "Slack - Shadow Cartel",
+            "percent": 0.6,
+            "swallows": [
+               {
+                "class": "^Slack$",
+               // "instance": "^slack$",
+               // "title": "^Slack\\ \\-\\ Shadow\\ Cartel$",
+               // "transient_for": "^$",
+               // "window_role": "^browser\\-window$"
+               }
+            ],
+            "type": "con"
+        },
+        {
+            "border": "normal",
+            "current_border_width": 2,
+            "floating": "auto_off",
+            "geometry": {
+               "height": 720,
+               "width": 1280,
+               "x": 2240,
+               "y": 180
+            },
+            "name": "#dhsj - Discord",
+            "percent": 0.4,
+            "swallows": [
+               {
+                "class": "^discord$",
+               // "instance": "^discord$",
+               // "title": "^\\#dhsj\\ \\-\\ Discord$",
+               // "transient_for": "^$",
+               // "window_role": "^browser\\-window$"
+               }
+            ],
+            "type": "con"
+        }
+    ]
+}
+
