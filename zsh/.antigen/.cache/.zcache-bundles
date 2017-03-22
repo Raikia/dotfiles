@@ -1,1 +1,1 @@
-zsh-users/zsh-syntax-highlighting zsh-users/zsh-completions zsh-users/zsh-autosuggestions zsh-users/zsh-history-substring-search HeroCC/LS_COLORS --loc=lib git tmux colored-man-pages sudo --loc=themes/crunch --btype=theme
+zsh-users/zsh-syntax-highlighting zsh-users/zsh-completions zsh-users/zsh-autosuggestions zsh-users/zsh-history-substring-search HeroCC/LS_COLORS --loc=lib git tmux colored-man-pages sudo

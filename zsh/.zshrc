@@ -11,19 +11,16 @@ antigen bundle zsh-users/zsh-autosuggestions
 antigen bundle zsh-users/zsh-history-substring-search
 antigen bundle HeroCC/LS_COLORS
 
-
 antigen use oh-my-zsh
 antigen bundle git
 antigen bundle tmux
 antigen bundle colored-man-pages
 antigen bundle sudo
 
-
-antigen theme crunch
-
 antigen apply
 
 
+source ~/.config/zsh/raikia_theme.zsh-theme
 
 ## Variables
 # Terminal colors
