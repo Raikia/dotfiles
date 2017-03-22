@@ -44,12 +44,11 @@ set laststatus=2
 
 filetype plugin indent on
 
-set tabstop=2
-set shiftwidth=2
+set tabstop=4
+set shiftwidth=4
 set shiftround
 set expandtab
 
-set textwidth=80
 
 set number
 set numberwidth=5
