@@ -58,5 +58,8 @@ set background=dark
 let g:solarized_termcolors=256
 colorscheme solarized
 
-" source ~/.vim/Tomorrow-Night.vim
+set mouse-=a
+
+autocmd BufNewFile,BufRead *.zsh setlocal filetype=zsh
+
 

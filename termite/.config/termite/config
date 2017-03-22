@@ -1,5 +1,5 @@
 [options]
-font = Droid Sans Mono 10
+font = Ubuntu Mono 11
 resize_grip = false
 scroll_on_output = false
 scroll_on_keystroke = true

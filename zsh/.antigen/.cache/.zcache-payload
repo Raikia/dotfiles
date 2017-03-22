@@ -1,0 +1,2778 @@
+#-- START ZCACHE GENERATED FILE
+#-- GENERATED: Wed Mar 22 14:08:23 CDT 2017
+#-- ANTIGEN v1.3.5
+#-- SOURCE: /home/raikia/.antigen/repos/https-COLON--SLASH--SLASH-github.com-SLASH-zsh-users-SLASH-zsh-syntax-highlighting.git//zsh-syntax-highlighting.plugin.zsh
+__ZCACHE_FILE_PATH="/home/raikia/.antigen/repos/https-COLON--SLASH--SLASH-github.com-SLASH-zsh-users-SLASH-zsh-syntax-highlighting.git//zsh-syntax-highlighting.plugin.zsh"
+0=${__ZCACHE_FILE_PATH}
+__ZCACHE_FILE_PATH="/home/raikia/.antigen/repos/https-COLON--SLASH--SLASH-github.com-SLASH-zsh-users-SLASH-zsh-syntax-highlighting.git//zsh-syntax-highlighting.plugin.zsh"
+source ${__ZCACHE_FILE_PATH:A:h}/zsh-syntax-highlighting.zsh
+;#-- END SOURCE
+#-- SOURCE: /home/raikia/.antigen/repos/https-COLON--SLASH--SLASH-github.com-SLASH-zsh-users-SLASH-zsh-completions.git//zsh-completions.plugin.zsh
+__ZCACHE_FILE_PATH="/home/raikia/.antigen/repos/https-COLON--SLASH--SLASH-github.com-SLASH-zsh-users-SLASH-zsh-completions.git//zsh-completions.plugin.zsh"
+fpath+="`dirname $__ZCACHE_FILE_PATH`/src"
+;#-- END SOURCE
+#-- SOURCE: /home/raikia/.antigen/repos/https-COLON--SLASH--SLASH-github.com-SLASH-zsh-users-SLASH-zsh-autosuggestions.git//zsh-autosuggestions.plugin.zsh
+__ZCACHE_FILE_PATH="/home/raikia/.antigen/repos/https-COLON--SLASH--SLASH-github.com-SLASH-zsh-users-SLASH-zsh-autosuggestions.git//zsh-autosuggestions.plugin.zsh"
+source ${__ZCACHE_FILE_PATH:A:h}/zsh-autosuggestions.zsh
+;#-- END SOURCE
+#-- SOURCE: /home/raikia/.antigen/repos/https-COLON--SLASH--SLASH-github.com-SLASH-zsh-users-SLASH-zsh-history-substring-search.git//zsh-history-substring-search.zsh
+#!/usr/bin/env zsh
+##############################################################################
+#
+# Copyright (c) 2009 Peter Stephenson
+# Copyright (c) 2011 Guido van Steen
+# Copyright (c) 2011 Suraj N. Kurapati
+# Copyright (c) 2011 Sorin Ionescu
+# Copyright (c) 2011 Vincent Guerci
+# Copyright (c) 2016 Geza Lore
+# All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions are met:
+#
+#  * Redistributions of source code must retain the above copyright
+#    notice, this list of conditions and the following disclaimer.
+#
+#  * Redistributions in binary form must reproduce the above
+#    copyright notice, this list of conditions and the following
+#    disclaimer in the documentation and/or other materials provided
+#    with the distribution.
+#
+#  * Neither the name of the FIZSH nor the names of its contributors
+#    may be used to endorse or promote products derived from this
+#    software without specific prior written permission.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+# AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+# ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
+# LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+# CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+# SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+# INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+# CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+# ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+# POSSIBILITY OF SUCH DAMAGE.
+#
+##############################################################################
+
+#-----------------------------------------------------------------------------
+# declare global variables
+#-----------------------------------------------------------------------------
+
+typeset -g BUFFER MATCH MBEGIN MEND CURSOR
+typeset -g HISTORY_SUBSTRING_SEARCH_HIGHLIGHT_FOUND
+typeset -g HISTORY_SUBSTRING_SEARCH_HIGHLIGHT_NOT_FOUND
+typeset -g HISTORY_SUBSTRING_SEARCH_GLOBBING_FLAGS
+typeset -g HISTORY_SUBSTRING_SEARCH_ENSURE_UNIQUE
+typeset -g _history_substring_search_refresh_display
+typeset -g _history_substring_search_query_highlight
+typeset -g _history_substring_search_result
+typeset -g _history_substring_search_query
+typeset -g -A _history_substring_search_raw_matches
+typeset -g _history_substring_search_raw_match_index
+typeset -g -A _history_substring_search_matches
+typeset -g -A _history_substring_search_unique_filter
+typeset -g _history_substring_search_match_index
+
+#-----------------------------------------------------------------------------
+# configuration variables
+#-----------------------------------------------------------------------------
+
+typeset -g HISTORY_SUBSTRING_SEARCH_HIGHLIGHT_FOUND='bg=magenta,fg=white,bold'
+typeset -g HISTORY_SUBSTRING_SEARCH_HIGHLIGHT_NOT_FOUND='bg=red,fg=white,bold'
+typeset -g HISTORY_SUBSTRING_SEARCH_GLOBBING_FLAGS='i'
+typeset -g HISTORY_SUBSTRING_SEARCH_ENSURE_UNIQUE=''
+typeset -g _history_substring_search_{refresh_display,query_highlight,result,query,match_index,raw_match_index}
+typeset -ga _history_substring_search{,_raw}_matches
+
+#-----------------------------------------------------------------------------
+# the main ZLE widgets
+#-----------------------------------------------------------------------------
+
+history-substring-search-up() {
+  _history-substring-search-begin
+
+  _history-substring-search-up-history ||
+  _history-substring-search-up-buffer ||
+  _history-substring-search-up-search
+
+  _history-substring-search-end
+}
+
+history-substring-search-down() {
+  _history-substring-search-begin
+
+  _history-substring-search-down-history ||
+  _history-substring-search-down-buffer ||
+  _history-substring-search-down-search
+
+  _history-substring-search-end
+}
+
+zle -N history-substring-search-up
+zle -N history-substring-search-down
+
+#-----------------------------------------------------------------------------
+# implementation details
+#-----------------------------------------------------------------------------
+
+zmodload -F zsh/parameter
+
+#
+# We have to "override" some keys and widgets if the
+# zsh-syntax-highlighting plugin has not been loaded:
+#
+# https://github.com/nicoulaj/zsh-syntax-highlighting
+#
+if [[ $+functions[_zsh_highlight] -eq 0 ]]; then
+  #
+  # Dummy implementation of _zsh_highlight() that
+  # simply removes any existing highlights when the
+  # user inserts printable characters into $BUFFER.
+  #
+  _zsh_highlight() {
+    if [[ $KEYS == [[:print:]] ]]; then
+      region_highlight=()
+    fi
+  }
+
+  #
+  # The following snippet was taken from the zsh-syntax-highlighting project:
+  #
+  # https://github.com/zsh-users/zsh-syntax-highlighting/blob/56b134f5d62ae3d4e66c7f52bd0cc2595f9b305b/zsh-syntax-highlighting.zsh#L126-161
+  #
+  # Copyright (c) 2010-2011 zsh-syntax-highlighting contributors
+  # All rights reserved.
+  #
+  # Redistribution and use in source and binary forms, with or without
+  # modification, are permitted provided that the following conditions are
+  # met:
+  #
+  #  * Redistributions of source code must retain the above copyright
+  #    notice, this list of conditions and the following disclaimer.
+  #
+  #  * Redistributions in binary form must reproduce the above copyright
+  #    notice, this list of conditions and the following disclaimer in the
+  #    documentation and/or other materials provided with the distribution.
+  #
+  #  * Neither the name of the zsh-syntax-highlighting contributors nor the
+  #    names of its contributors may be used to endorse or promote products
+  #    derived from this software without specific prior written permission.
+  #
+  # THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS
+  # IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO,
+  # THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+  # PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR
+  # CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+  # EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+  # PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+  # PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
+  # LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
+  # NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+  # SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+  #
+  #--------------8<-------------------8<-------------------8<-----------------
+  # Rebind all ZLE widgets to make them invoke _zsh_highlights.
+  _zsh_highlight_bind_widgets()
+  {
+    # Load ZSH module zsh/zleparameter, needed to override user defined widgets.
+    zmodload zsh/zleparameter 2>/dev/null || {
+      echo 'zsh-syntax-highlighting: failed loading zsh/zleparameter.' >&2
+      return 1
+    }
+
+    # Override ZLE widgets to make them invoke _zsh_highlight.
+    local cur_widget
+    for cur_widget in ${${(f)"$(builtin zle -la)"}:#(.*|_*|orig-*|run-help|which-command|beep|yank*)}; do
+      case $widgets[$cur_widget] in
+
+        # Already rebound event: do nothing.
+        user:$cur_widget|user:_zsh_highlight_widget_*);;
+
+        # User defined widget: override and rebind old one with prefix "orig-".
+        user:*) eval "zle -N orig-$cur_widget ${widgets[$cur_widget]#*:}; \
+                      _zsh_highlight_widget_$cur_widget() { builtin zle orig-$cur_widget -- \"\$@\" && _zsh_highlight }; \
+                      zle -N $cur_widget _zsh_highlight_widget_$cur_widget";;
+
+        # Completion widget: override and rebind old one with prefix "orig-".
+        completion:*) eval "zle -C orig-$cur_widget ${${widgets[$cur_widget]#*:}/:/ }; \
+                            _zsh_highlight_widget_$cur_widget() { builtin zle orig-$cur_widget -- \"\$@\" && _zsh_highlight }; \
+                            zle -N $cur_widget _zsh_highlight_widget_$cur_widget";;
+
+        # Builtin widget: override and make it call the builtin ".widget".
+        builtin) eval "_zsh_highlight_widget_$cur_widget() { builtin zle .$cur_widget -- \"\$@\" && _zsh_highlight }; \
+                       zle -N $cur_widget _zsh_highlight_widget_$cur_widget";;
+
+        # Default: unhandled case.
+        *) echo "zsh-syntax-highlighting: unhandled ZLE widget '$cur_widget'" >&2 ;;
+      esac
+    done
+  }
+  #-------------->8------------------->8------------------->8-----------------
+
+  _zsh_highlight_bind_widgets
+fi
+
+_history-substring-search-begin() {
+  setopt localoptions extendedglob
+
+  _history_substring_search_refresh_display=
+  _history_substring_search_query_highlight=
+
+  #
+  # If the buffer is the same as the previously displayed history substring
+  # search result, then just keep stepping through the match list. Otherwise
+  # start a new search.
+  #
+  if [[ -n $BUFFER && $BUFFER == ${_history_substring_search_result:-} ]]; then
+    return;
+  fi
+
+  #
+  # Clear the previous result.
+  #
+  _history_substring_search_result=''
+
+  if [[ -z $BUFFER ]]; then
+    #
+    # If the buffer is empty, we will just act like up-history/down-history
+    # in ZSH, so we do not need to actually search the history. This should
+    # speed things up a little.
+    #
+    _history_substring_search_query=
+    _history_substring_search_raw_matches=()
+
+  else
+    #
+    # For the purpose of highlighting we keep a copy of the original
+    # query string.
+    #
+    _history_substring_search_query=$BUFFER
+
+    #
+    # $BUFFER contains the text that is in the command-line currently.
+    # we put an extra "\\" before meta characters such as "\(" and "\)",
+    # so that they become "\\\(" and "\\\)".
+    #
+    local escaped_query=${BUFFER//(#m)[\][()|\\*?#<>~^]/\\$MATCH}
+
+    #
+    # Find all occurrences of the search query in the history file.
+    #
+    # (k) returns the "keys" (history index numbers) instead of the values
+    # (R) returns values in reverse older, so the index of the youngest
+    # matching history entry is at the head of the list.
+    #
+    _history_substring_search_raw_matches=(${(k)history[(R)(#$HISTORY_SUBSTRING_SEARCH_GLOBBING_FLAGS)*${escaped_query}*]})
+  fi
+
+  #
+  # In order to stay as responsive as possible, we will process the raw
+  # matches lazily (when the user requests the next match) to choose items
+  # that need to be displayed to the user.
+  # _history_substring_search_raw_match_index holds the index of the last
+  # unprocessed entry in _history_substring_search_raw_matches. Any items
+  # that need to be displayed will be added to
+  # _history_substring_search_matches.
+  #
+  # We use an associative array (_history_substring_search_unique_filter) as
+  # a 'set' data structure to ensure uniqueness of the results if desired.
+  # If an entry (key) is in the set (non-empty value), then we have already
+  # added that entry to _history_substring_search_matches.
+  #
+  _history_substring_search_raw_match_index=0
+  _history_substring_search_matches=()
+  unset _history_substring_search_unique_filter
+  typeset -A -g _history_substring_search_unique_filter
+
+  #
+  # If $_history_substring_search_match_index is equal to
+  # $#_history_substring_search_matches + 1, this indicates that we
+  # are beyond the end of $_history_substring_search_matches and that we
+  # have also processed all entries in
+  # _history_substring_search_raw_matches.
+  #
+  # If $#_history_substring_search_match_index is equal to 0, this indicates
+  # that we are beyond the beginning of $_history_substring_search_matches.
+  #
+  # If we have initially pressed "up" we have to initialize
+  # $_history_substring_search_match_index to 0 so that it will be
+  # incremented to 1.
+  #
+  # If we have initially pressed "down" we have to initialize
+  # $_history_substring_search_match_index to 1 so that it will be
+  # decremented to 0.
+  #
+  if [[ $WIDGET == history-substring-search-down ]]; then
+     _history_substring_search_match_index=1
+  else
+    _history_substring_search_match_index=0
+  fi
+}
+
+_history-substring-search-end() {
+  setopt localoptions extendedglob
+
+  _history_substring_search_result=$BUFFER
+
+  # the search was successful so display the result properly by clearing away
+  # existing highlights and moving the cursor to the end of the result buffer
+  if [[ $_history_substring_search_refresh_display -eq 1 ]]; then
+    region_highlight=()
+    CURSOR=${#BUFFER}
+  fi
+
+  # highlight command line using zsh-syntax-highlighting
+  _zsh_highlight
+
+  # highlight the search query inside the command line
+  if [[ -n $_history_substring_search_query_highlight && -n $_history_substring_search_query ]]; then
+    #
+    # The following expression yields a variable $MBEGIN, which
+    # indicates the begin position + 1 of the first occurrence
+    # of _history_substring_search_query in $BUFFER.
+    #
+    : ${(S)BUFFER##(#m$HISTORY_SUBSTRING_SEARCH_GLOBBING_FLAGS)($_history_substring_search_query##)}
+    local begin=$(( MBEGIN - 1 ))
+    local end=$(( begin + $#_history_substring_search_query ))
+    region_highlight+=("$begin $end $_history_substring_search_query_highlight")
+  fi
+
+  # For debugging purposes:
+  # zle -R "mn: "$_history_substring_search_match_index" m#: "${#_history_substring_search_matches}
+  # read -k -t 200 && zle -U $REPLY
+
+  # Exit successfully from the history-substring-search-* widgets.
+  return 0
+}
+
+_history-substring-search-up-buffer() {
+  #
+  # Check if the UP arrow was pressed to move the cursor within a multi-line
+  # buffer. This amounts to three tests:
+  #
+  # 1. $#buflines -gt 1.
+  #
+  # 2. $CURSOR -ne $#BUFFER.
+  #
+  # 3. Check if we are on the first line of the current multi-line buffer.
+  #    If so, pressing UP would amount to leaving the multi-line buffer.
+  #
+  #    We check this by adding an extra "x" to $LBUFFER, which makes
+  #    sure that xlbuflines is always equal to the number of lines
+  #    until $CURSOR (including the line with the cursor on it).
+  #
+  local buflines XLBUFFER xlbuflines
+  buflines=(${(f)BUFFER})
+  XLBUFFER=$LBUFFER"x"
+  xlbuflines=(${(f)XLBUFFER})
+
+  if [[ $#buflines -gt 1 && $CURSOR -ne $#BUFFER && $#xlbuflines -ne 1 ]]; then
+    zle up-line-or-history
+    return 0
+  fi
+
+  return 1
+}
+
+_history-substring-search-down-buffer() {
+  #
+  # Check if the DOWN arrow was pressed to move the cursor within a multi-line
+  # buffer. This amounts to three tests:
+  #
+  # 1. $#buflines -gt 1.
+  #
+  # 2. $CURSOR -ne $#BUFFER.
+  #
+  # 3. Check if we are on the last line of the current multi-line buffer.
+  #    If so, pressing DOWN would amount to leaving the multi-line buffer.
+  #
+  #    We check this by adding an extra "x" to $RBUFFER, which makes
+  #    sure that xrbuflines is always equal to the number of lines
+  #    from $CURSOR (including the line with the cursor on it).
+  #
+  local buflines XRBUFFER xrbuflines
+  buflines=(${(f)BUFFER})
+  XRBUFFER="x"$RBUFFER
+  xrbuflines=(${(f)XRBUFFER})
+
+  if [[ $#buflines -gt 1 && $CURSOR -ne $#BUFFER && $#xrbuflines -ne 1 ]]; then
+    zle down-line-or-history
+    return 0
+  fi
+
+  return 1
+}
+
+_history-substring-search-up-history() {
+  #
+  # Behave like up in ZSH, except clear the $BUFFER
+  # when beginning of history is reached like in Fish.
+  #
+  if [[ -z $_history_substring_search_query ]]; then
+
+    # we have reached the absolute top of history
+    if [[ $HISTNO -eq 1 ]]; then
+      BUFFER=
+
+    # going up from somewhere below the top of history
+    else
+      zle up-line-or-history
+    fi
+
+    return 0
+  fi
+
+  return 1
+}
+
+_history-substring-search-down-history() {
+  #
+  # Behave like down-history in ZSH, except clear the
+  # $BUFFER when end of history is reached like in Fish.
+  #
+  if [[ -z $_history_substring_search_query ]]; then
+
+    # going down from the absolute top of history
+    if [[ $HISTNO -eq 1 && -z $BUFFER ]]; then
+      BUFFER=${history[1]}
+      _history_substring_search_refresh_display=1
+
+    # going down from somewhere above the bottom of history
+    else
+      zle down-line-or-history
+    fi
+
+    return 0
+  fi
+
+  return 1
+}
+
+_history_substring_search_process_raw_matches() {
+  #
+  # Process more outstanding raw matches and append any matches that need to
+  # be displayed to the user to _history_substring_search_matches.
+  # Return whether there were any more results appended.
+  #
+
+  #
+  # While we have more raw matches. Process them to see if there are any more
+  # matches that need to be displayed to the user.
+  #
+  while [[ $_history_substring_search_raw_match_index -lt $#_history_substring_search_raw_matches ]]; do
+    #
+    # Move on to the next raw entry and get its history index.
+    #
+    (( _history_substring_search_raw_match_index++ ))
+    local index=${_history_substring_search_raw_matches[$_history_substring_search_raw_match_index]}
+
+    #
+    # If HISTORY_SUBSTRING_SEARCH_ENSURE_UNIQUE is set to a non-empty value,
+    # then ensure that only unique matches are presented to the user.
+    # When HIST_IGNORE_ALL_DUPS is set, ZSH already ensures a unique history,
+    # so in this case we do not need to do anything.
+    #
+    if [[ ! -o HIST_IGNORE_ALL_DUPS && -n $HISTORY_SUBSTRING_SEARCH_ENSURE_UNIQUE ]]; then
+      #
+      # Get the actual history entry at the new index, and check if we have
+      # already added it to _history_substring_search_matches.
+      #
+      local entry=${history[$index]}
+
+      if [[ -z ${_history_substring_search_unique_filter[$entry]} ]]; then
+        #
+        # This is a new unique entry. Add it to the filter and append the
+        # index to _history_substring_search_matches.
+        #
+        _history_substring_search_unique_filter[$entry]=1
+        _history_substring_search_matches+=($index)
+
+        #
+        # Indicate that we did find a match.
+        #
+        return 0
+      fi
+
+    else
+      #
+      # Just append the new history index to the processed matches.
+      #
+      _history_substring_search_matches+=($index)
+
+      #
+      # Indicate that we did find a match.
+      #
+      return 0
+    fi
+
+  done
+
+  #
+  # We are beyond the end of the list of raw matches. Indicate that no
+  # more matches are available.
+  #
+  return 1
+}
+
+_history-substring-search-has-next() {
+  #
+  # Predicate function that returns whether any more older matches are
+  # available.
+  #
+
+  if  [[ $_history_substring_search_match_index -lt $#_history_substring_search_matches ]]; then
+    #
+    # We did not reach the end of the processed list, so we do have further
+    # matches.
+    #
+    return 0
+
+  else
+    #
+    # We are at the end of the processed list. Try to process further
+    # unprocessed matches. _history_substring_search_process_raw_matches
+    # returns whether any more matches were available, so just return
+    # that result.
+    #
+    _history_substring_search_process_raw_matches
+    return $?
+  fi
+}
+
+_history-substring-search-has-prev() {
+  #
+  # Predicate function that returns whether any more younger matches are
+  # available.
+  #
+
+  if [[ $_history_substring_search_match_index -gt 1 ]]; then
+    #
+    # We did not reach the beginning of the processed list, so we do have
+    # further matches.
+    #
+    return 0
+
+  else
+    #
+    # We are at the beginning of the processed list. We do not have any more
+    # matches.
+    #
+    return 1
+  fi
+}
+
+_history-substring-search-found() {
+  #
+  # A match is available. The index of the match is held in
+  # $_history_substring_search_match_index
+  #
+  # 1. Make $BUFFER equal to the matching history entry.
+  #
+  # 2. Use $HISTORY_SUBSTRING_SEARCH_HIGHLIGHT_FOUND
+  #    to highlight the current buffer.
+  #
+  BUFFER=$history[$_history_substring_search_matches[$_history_substring_search_match_index]]
+  _history_substring_search_query_highlight=$HISTORY_SUBSTRING_SEARCH_HIGHLIGHT_FOUND
+}
+
+_history-substring-search-not-found() {
+  #
+  # No more matches are available.
+  #
+  # 1. Make $BUFFER equal to $_history_substring_search_query so the user can
+  #    revise it and search again.
+  #
+  # 2. Use $HISTORY_SUBSTRING_SEARCH_HIGHLIGHT_NOT_FOUND
+  #    to highlight the current buffer.
+  #
+  BUFFER=$_history_substring_search_query
+  _history_substring_search_query_highlight=$HISTORY_SUBSTRING_SEARCH_HIGHLIGHT_NOT_FOUND
+}
+
+_history-substring-search-up-search() {
+  _history_substring_search_refresh_display=1
+
+  #
+  # Select history entry during history-substring-down-search:
+  #
+  # The following variables have been initialized in
+  # _history-substring-search-up/down-search():
+  #
+  # $_history_substring_search_matches is the current list of matches that
+  # need to be displayed to the user.
+  # $_history_substring_search_match_index is the index of the current match
+  # that is being displayed to the user.
+  #
+  # The range of values that $_history_substring_search_match_index can take
+  # is: [0, $#_history_substring_search_matches + 1].  A value of 0
+  # indicates that we are beyond the beginning of
+  # $_history_substring_search_matches. A value of
+  # $#_history_substring_search_matches + 1 indicates that we are beyond
+  # the end of $_history_substring_search_matches and that we have also
+  # processed all entries in _history_substring_search_raw_matches.
+  #
+  # If $_history_substring_search_match_index equals
+  # $#_history_substring_search_matches and
+  # $_history_substring_search_raw_match_index is not greater than
+  # $#_history_substring_search_raw_matches, then we need to further process
+  # $_history_substring_search_raw_matches to see if there are any more
+  # entries that need to be displayed to the user.
+  #
+  # In _history-substring-search-up-search() the initial value of
+  # $_history_substring_search_match_index is 0. This value is set in
+  # _history-substring-search-begin(). _history-substring-search-up-search()
+  # will initially increment it to 1.
+  #
+
+  if [[ $_history_substring_search_match_index -gt $#_history_substring_search_matches ]]; then
+    #
+    # We are beyond the end of $_history_substring_search_matches. This
+    # can only happen if we have also exhausted the unprocessed matches in
+    # _history_substring_search_raw_matches.
+    #
+    # 1. Update display to indicate search not found.
+    #
+    _history-substring-search-not-found
+    return
+  fi
+
+  if _history-substring-search-has-next; then
+    #
+    # We do have older matches.
+    #
+    # 1. Move index to point to the next match.
+    # 2. Update display to indicate search found.
+    #
+    (( _history_substring_search_match_index++ ))
+    _history-substring-search-found
+
+  else
+    #
+    # We do not have older matches.
+    #
+    # 1. Move the index beyond the end of
+    #    _history_substring_search_matches.
+    # 2. Update display to indicate search not found.
+    #
+    (( _history_substring_search_match_index++ ))
+    _history-substring-search-not-found
+  fi
+
+  #
+  # When HIST_FIND_NO_DUPS is set, meaning that only unique command lines from
+  # history should be matched, make sure the new and old results are different.
+  #
+  # However, if the HIST_IGNORE_ALL_DUPS shell option, or
+  # HISTORY_SUBSTRING_SEARCH_ENSURE_UNIQUE is set, then we already have a
+  # unique history, so in this case we do not need to do anything.
+  #
+  if [[ -o HIST_IGNORE_ALL_DUPS || -n $HISTORY_SUBSTRING_SEARCH_ENSURE_UNIQUE ]]; then
+    return
+  fi
+
+  if [[ -o HIST_FIND_NO_DUPS && $BUFFER == $_history_substring_search_result ]]; then
+    #
+    # Repeat the current search so that a different (unique) match is found.
+    #
+    _history-substring-search-up-search
+  fi
+}
+
+_history-substring-search-down-search() {
+  _history_substring_search_refresh_display=1
+
+  #
+  # Select history entry during history-substring-down-search:
+  #
+  # The following variables have been initialized in
+  # _history-substring-search-up/down-search():
+  #
+  # $_history_substring_search_matches is the current list of matches that
+  # need to be displayed to the user.
+  # $_history_substring_search_match_index is the index of the current match
+  # that is being displayed to the user.
+  #
+  # The range of values that $_history_substring_search_match_index can take
+  # is: [0, $#_history_substring_search_matches + 1].  A value of 0
+  # indicates that we are beyond the beginning of
+  # $_history_substring_search_matches. A value of
+  # $#_history_substring_search_matches + 1 indicates that we are beyond
+  # the end of $_history_substring_search_matches and that we have also
+  # processed all entries in _history_substring_search_raw_matches.
+  #
+  # In _history-substring-search-down-search() the initial value of
+  # $_history_substring_search_match_index is 1. This value is set in
+  # _history-substring-search-begin(). _history-substring-search-down-search()
+  # will initially decrement it to 0.
+  #
+
+  if [[ $_history_substring_search_match_index -lt 1 ]]; then
+    #
+    # We are beyond the beginning of $_history_substring_search_matches.
+    #
+    # 1. Update display to indicate search not found.
+    #
+    _history-substring-search-not-found
+    return
+  fi
+
+  if _history-substring-search-has-prev; then
+    #
+    # We do have younger matches.
+    #
+    # 1. Move index to point to the previous match.
+    # 2. Update display to indicate search found.
+    #
+    (( _history_substring_search_match_index-- ))
+    _history-substring-search-found
+
+  else
+    #
+    # We do not have younger matches.
+    #
+    # 1. Move the index beyond the beginning of
+    #    _history_substring_search_matches.
+    # 2. Update display to indicate search not found.
+    #
+    (( _history_substring_search_match_index-- ))
+    _history-substring-search-not-found
+  fi
+
+  #
+  # When HIST_FIND_NO_DUPS is set, meaning that only unique command lines from
+  # history should be matched, make sure the new and old results are different.
+  #
+  # However, if the HIST_IGNORE_ALL_DUPS shell option, or
+  # HISTORY_SUBSTRING_SEARCH_ENSURE_UNIQUE is set, then we already have a
+  # unique history, so in this case we do not need to do anything.
+  #
+  if [[ -o HIST_IGNORE_ALL_DUPS || -n $HISTORY_SUBSTRING_SEARCH_ENSURE_UNIQUE ]]; then
+    return
+  fi
+
+  if [[ -o HIST_FIND_NO_DUPS && $BUFFER == $_history_substring_search_result ]]; then
+    #
+    # Repeat the current search so that a different (unique) match is found.
+    #
+    _history-substring-search-down-search
+  fi
+}
+
+# -*- mode: zsh; sh-indentation: 2; indent-tabs-mode: nil; sh-basic-offset: 2; -*-
+# vim: ft=zsh sw=2 ts=2 et
+;#-- END SOURCE
+#-- SOURCE: /home/raikia/.antigen/repos/https-COLON--SLASH--SLASH-github.com-SLASH-HeroCC-SLASH-LS_COLORS.git//ls_colors.plugin.zsh
+__ZCACHE_FILE_PATH="/home/raikia/.antigen/repos/https-COLON--SLASH--SLASH-github.com-SLASH-HeroCC-SLASH-LS_COLORS.git//ls_colors.plugin.zsh"
+eval $( dircolors -b ${__ZCACHE_FILE_PATH:A:h}/LS_COLORS )
+;#-- END SOURCE
+#-- SOURCE: /home/raikia/.antigen/repos/https-COLON--SLASH--SLASH-github.com-SLASH-robbyrussell-SLASH-oh-my-zsh.git/lib/bzr.zsh
+## Bazaar integration
+## Just works with the GIT integration just add $(bzr_prompt_info) to the PROMPT
+function bzr_prompt_info() {
+	BZR_CB=`bzr nick 2> /dev/null | grep -v "ERROR" | cut -d ":" -f2 | awk -F / '{print "bzr::"$1}'`
+	if [ -n "$BZR_CB" ]; then
+		BZR_DIRTY=""
+		[[ -n `bzr status` ]] && BZR_DIRTY=" %{$fg[red]%} * %{$fg[green]%}"
+		echo "$ZSH_THEME_SCM_PROMPT_PREFIX$BZR_CB$BZR_DIRTY$ZSH_THEME_GIT_PROMPT_SUFFIX"
+	fi
+}
+;#-- END SOURCE
+#-- SOURCE: /home/raikia/.antigen/repos/https-COLON--SLASH--SLASH-github.com-SLASH-robbyrussell-SLASH-oh-my-zsh.git/lib/clipboard.zsh
+# System clipboard integration
+#
+# This file has support for doing system clipboard copy and paste operations
+# from the command line in a generic cross-platform fashion.
+#
+# On OS X and Windows, the main system clipboard or "pasteboard" is used. On other
+# Unix-like OSes, this considers the X Windows CLIPBOARD selection to be the
+# "system clipboard", and the X Windows `xclip` command must be installed.
+
+# clipcopy - Copy data to clipboard
+#
+# Usage:
+#
+#  <command> | clipcopy    - copies stdin to clipboard
+#
+#  clipcopy <file>         - copies a file's contents to clipboard
+#
+function clipcopy() {
+  emulate -L zsh
+  local file=$1
+  if [[ $OSTYPE == darwin* ]]; then
+    if [[ -z $file ]]; then
+      pbcopy
+    else
+      cat $file | pbcopy
+    fi
+  elif [[ $OSTYPE == cygwin* ]]; then
+    if [[ -z $file ]]; then
+      cat > /dev/clipboard
+    else
+      cat $file > /dev/clipboard
+    fi
+  else
+    if (( $+commands[xclip] )); then
+      if [[ -z $file ]]; then
+        xclip -in -selection clipboard
+      else
+        xclip -in -selection clipboard $file
+      fi
+    elif (( $+commands[xsel] )); then
+      if [[ -z $file ]]; then
+        xsel --clipboard --input 
+      else
+        cat "$file" | xsel --clipboard --input
+      fi
+    else
+      print "clipcopy: Platform $OSTYPE not supported or xclip/xsel not installed" >&2
+      return 1
+    fi
+  fi
+}
+
+# clippaste - "Paste" data from clipboard to stdout
+#
+# Usage:
+#
+#   clippaste   - writes clipboard's contents to stdout
+#
+#   clippaste | <command>    - pastes contents and pipes it to another process
+#
+#   clippaste > <file>      - paste contents to a file
+#
+# Examples:
+#
+#   # Pipe to another process
+#   clippaste | grep foo
+#
+#   # Paste to a file
+#   clippaste > file.txt
+function clippaste() {
+  emulate -L zsh
+  if [[ $OSTYPE == darwin* ]]; then
+    pbpaste
+  elif [[ $OSTYPE == cygwin* ]]; then
+    cat /dev/clipboard
+  else
+    if (( $+commands[xclip] )); then
+      xclip -out -selection clipboard
+    elif (( $+commands[xsel] )); then
+      xsel --clipboard --output
+    else
+      print "clipcopy: Platform $OSTYPE not supported or xclip/xsel not installed" >&2
+      return 1
+    fi
+  fi
+}
+;#-- END SOURCE
+#-- SOURCE: /home/raikia/.antigen/repos/https-COLON--SLASH--SLASH-github.com-SLASH-robbyrussell-SLASH-oh-my-zsh.git/lib/compfix.zsh
+# Handle completions insecurities (i.e., completion-dependent directories with
+# insecure ownership or permissions) by:
+#
+# * Human-readably notifying the user of these insecurities.
+# * Moving away all existing completion caches to a temporary directory. Since
+#   any of these caches may have been generated from insecure directories, they
+#   are all suspect now. Failing to do so typically causes subsequent compinit()
+#   calls to fail with "command not found: compdef" errors. (That's bad.)
+function handle_completion_insecurities() {
+  # List of the absolute paths of all unique insecure directories, split on
+  # newline from compaudit()'s output resembling:
+  #
+  #     There are insecure directories:
+  #     /usr/share/zsh/site-functions
+  #     /usr/share/zsh/5.0.6/functions
+  #     /usr/share/zsh
+  #     /usr/share/zsh/5.0.6
+  #
+  # Since the ignorable first line is printed to stderr and thus not captured,
+  # stderr is squelched to prevent this output from leaking to the user. 
+  local -aU insecure_dirs
+  insecure_dirs=( ${(f@):-"$(compaudit 2>/dev/null)"} )
+
+  # If no such directories exist, get us out of here.
+  if (( ! ${#insecure_dirs} )); then
+      print "[oh-my-zsh] No insecure completion-dependent directories detected."
+      return
+  fi
+
+  # List ownership and permissions of all insecure directories.
+  print "[oh-my-zsh] Insecure completion-dependent directories detected:"
+  ls -ld "${(@)insecure_dirs}"
+  print "[oh-my-zsh] For safety, completions will be disabled until you manually fix all"
+  print "[oh-my-zsh] insecure directory permissions and ownership and restart oh-my-zsh."
+  print "[oh-my-zsh] See the above list for directories with group or other writability.\n"
+
+  # Locally enable the "NULL_GLOB" option, thus removing unmatched filename
+  # globs from argument lists *AND* printing no warning when doing so. Failing
+  # to do so prints an unreadable warning if no completion caches exist below.
+  setopt local_options null_glob
+
+  # List of the absolute paths of all unique existing completion caches.
+  local -aU zcompdump_files
+  zcompdump_files=( "${ZSH_COMPDUMP}"(.) "${ZDOTDIR:-${HOME}}"/.zcompdump* )
+
+  # Move such caches to a temporary directory.
+  if (( ${#zcompdump_files} )); then
+    # Absolute path of the directory to which such files will be moved.
+    local ZSH_ZCOMPDUMP_BAD_DIR="${ZSH_CACHE_DIR}/zcompdump-bad"
+
+    # List such files first.
+    print "[oh-my-zsh] Insecure completion caches also detected:"
+    ls -l "${(@)zcompdump_files}"
+
+    # For safety, move rather than permanently remove such files.
+    print "[oh-my-zsh] Moving to \"${ZSH_ZCOMPDUMP_BAD_DIR}/\"...\n"
+    mkdir -p "${ZSH_ZCOMPDUMP_BAD_DIR}"
+    mv "${(@)zcompdump_files}" "${ZSH_ZCOMPDUMP_BAD_DIR}/"
+  fi
+}
+;#-- END SOURCE
+#-- SOURCE: /home/raikia/.antigen/repos/https-COLON--SLASH--SLASH-github.com-SLASH-robbyrussell-SLASH-oh-my-zsh.git/lib/completion.zsh
+# fixme - the load process here seems a bit bizarre
+zmodload -i zsh/complist
+
+WORDCHARS=''
+
+unsetopt menu_complete   # do not autoselect the first completion entry
+unsetopt flowcontrol
+setopt auto_menu         # show completion menu on successive tab press
+setopt complete_in_word
+setopt always_to_end
+
+# should this be in keybindings?
+bindkey -M menuselect '^o' accept-and-infer-next-history
+zstyle ':completion:*:*:*:*:*' menu select
+
+# case insensitive (all), partial-word and substring completion
+if [[ "$CASE_SENSITIVE" = true ]]; then
+  zstyle ':completion:*' matcher-list 'r:|=*' 'l:|=* r:|=*'
+else
+  if [[ "$HYPHEN_INSENSITIVE" = true ]]; then
+    zstyle ':completion:*' matcher-list 'm:{a-zA-Z-_}={A-Za-z_-}' 'r:|=*' 'l:|=* r:|=*'
+  else
+    zstyle ':completion:*' matcher-list 'm:{a-zA-Z}={A-Za-z}' 'r:|=*' 'l:|=* r:|=*'
+  fi
+fi
+unset CASE_SENSITIVE HYPHEN_INSENSITIVE
+
+zstyle ':completion:*' list-colors ''
+zstyle ':completion:*:*:kill:*:processes' list-colors '=(#b) #([0-9]#) ([0-9a-z-]#)*=01;34=0=01'
+
+if [[ "$OSTYPE" = solaris* ]]; then
+  zstyle ':completion:*:*:*:*:processes' command "ps -u $USER -o pid,user,comm"
+else
+  zstyle ':completion:*:*:*:*:processes' command "ps -u $USER -o pid,user,comm -w -w"
+fi
+
+# disable named-directories autocompletion
+zstyle ':completion:*:cd:*' tag-order local-directories directory-stack path-directories
+
+# Use caching so that commands like apt and dpkg complete are useable
+zstyle ':completion::complete:*' use-cache 1
+zstyle ':completion::complete:*' cache-path $ZSH_CACHE_DIR
+
+# Don't complete uninteresting users
+zstyle ':completion:*:*:*:users' ignored-patterns \
+        adm amanda apache at avahi avahi-autoipd beaglidx bin cacti canna \
+        clamav daemon dbus distcache dnsmasq dovecot fax ftp games gdm \
+        gkrellmd gopher hacluster haldaemon halt hsqldb ident junkbust kdm \
+        ldap lp mail mailman mailnull man messagebus  mldonkey mysql nagios \
+        named netdump news nfsnobody nobody nscd ntp nut nx obsrun openvpn \
+        operator pcap polkitd postfix postgres privoxy pulse pvm quagga radvd \
+        rpc rpcuser rpm rtkit scard shutdown squid sshd statd svn sync tftp \
+        usbmux uucp vcsa wwwrun xfs '_*'
+
+# ... unless we really want to.
+zstyle '*' single-ignored show
+
+if [[ $COMPLETION_WAITING_DOTS = true ]]; then
+  expand-or-complete-with-dots() {
+    # toggle line-wrapping off and back on again
+    [[ -n "$terminfo[rmam]" && -n "$terminfo[smam]" ]] && echoti rmam
+    print -Pn "%{%F{red}......%f%}"
+    [[ -n "$terminfo[rmam]" && -n "$terminfo[smam]" ]] && echoti smam
+
+    zle expand-or-complete
+    zle redisplay
+  }
+  zle -N expand-or-complete-with-dots
+  bindkey "^I" expand-or-complete-with-dots
+fi
+;#-- END SOURCE
+#-- SOURCE: /home/raikia/.antigen/repos/https-COLON--SLASH--SLASH-github.com-SLASH-robbyrussell-SLASH-oh-my-zsh.git/lib/correction.zsh
+if [[ "$ENABLE_CORRECTION" == "true" ]]; then
+  alias ebuild='nocorrect ebuild'
+  alias gist='nocorrect gist'
+  alias heroku='nocorrect heroku'
+  alias hpodder='nocorrect hpodder'
+  alias man='nocorrect man'
+  alias mkdir='nocorrect mkdir'
+  alias mv='nocorrect mv'
+  alias mysql='nocorrect mysql'
+  alias sudo='nocorrect sudo'
+
+  setopt correct_all
+fi
+;#-- END SOURCE
+#-- SOURCE: /home/raikia/.antigen/repos/https-COLON--SLASH--SLASH-github.com-SLASH-robbyrussell-SLASH-oh-my-zsh.git/lib/diagnostics.zsh
+# diagnostics.zsh
+#
+# Diagnostic and debugging support for oh-my-zsh
+
+# omz_diagnostic_dump()
+#
+# Author: Andrew Janke <andrew@apjanke.net>
+#
+# Usage:
+#
+# omz_diagnostic_dump [-v] [-V] [file]
+#
+# NOTE: This is a work in progress. Its interface and behavior are going to change,
+# and probably in non-back-compatible ways.
+#
+# Outputs a bunch of information about the state and configuration of
+# oh-my-zsh, zsh, and the user's system. This is intended to provide a
+# bunch of context for diagnosing your own or a third party's problems, and to
+# be suitable for posting to public bug reports.
+#
+# The output is human-readable and its format may change over time. It is not
+# suitable for parsing. All the output is in one single file so it can be posted
+# as a gist or bug comment on GitHub. GitHub doesn't support attaching tarballs
+# or other files to bugs; otherwise, this would probably have an option to produce
+# tarballs that contain copies of the config and customization files instead of
+# catting them all in to one file.
+#
+# This is intended to be widely portable, and run anywhere that oh-my-zsh does.
+# Feel free to report any portability issues as bugs.
+#
+# This is written in a defensive style so it still works (and can detect) cases when
+# basic functionality like echo and which have been redefined. In particular, almost
+# everything is invoked with "builtin" or "command", to work in the face of user 
+# redefinitions.
+#
+# OPTIONS
+#
+# [file]   Specifies the output file. If not given, a file in the current directory
+#        is selected automatically.
+#
+# -v    Increase the verbosity of the dump output. May be specified multiple times.
+#       Verbosity levels:
+#        0 - Basic info, shell state, omz configuration, git state
+#        1 - (default) Adds key binding info and configuration file contents
+#        2 - Adds zcompdump file contents
+#
+# -V    Reduce the verbosity of the dump output. May be specified multiple times.
+#
+# TODO:
+# * Multi-file capture
+# * Add automatic gist uploading
+# * Consider whether to move default output file location to TMPDIR. More robust
+#     but less user friendly.
+#
+
+autoload -Uz is-at-least
+
+function omz_diagnostic_dump() {
+  emulate -L zsh
+
+  builtin echo "Generating diagnostic dump; please be patient..."
+  
+  local thisfcn=omz_diagnostic_dump
+  local -A opts
+  local opt_verbose opt_noverbose opt_outfile
+  local timestamp=$(date +%Y%m%d-%H%M%S)
+  local outfile=omz_diagdump_$timestamp.txt
+  builtin zparseopts -A opts -D -- "v+=opt_verbose" "V+=opt_noverbose"
+  local verbose n_verbose=${#opt_verbose} n_noverbose=${#opt_noverbose}
+  (( verbose = 1 + n_verbose - n_noverbose ))
+
+  if [[ ${#*} > 0 ]]; then
+    opt_outfile=$1
+  fi
+  if [[ ${#*} > 1 ]]; then
+    builtin echo "$thisfcn: error: too many arguments" >&2
+    return 1
+  fi
+  if [[ -n "$opt_outfile" ]]; then
+    outfile="$opt_outfile"
+  fi
+
+  # Always write directly to a file so terminal escape sequences are
+  # captured cleanly
+  _omz_diag_dump_one_big_text &> "$outfile"
+  if [[ $? != 0 ]]; then
+    builtin echo "$thisfcn: error while creating diagnostic dump; see $outfile for details"
+  fi
+
+  builtin echo
+  builtin echo Diagnostic dump file created at: "$outfile"
+  builtin echo
+  builtin echo To share this with OMZ developers, post it as a gist on GitHub 
+  builtin echo at "https://gist.github.com" and share the link to the gist.
+  builtin echo
+  builtin echo "WARNING: This dump file contains all your zsh and omz configuration files,"
+  builtin echo "so don't share it publicly if there's sensitive information in them."
+  builtin echo
+
+}
+
+function _omz_diag_dump_one_big_text() {
+  local program programs progfile md5
+
+  builtin echo oh-my-zsh diagnostic dump
+  builtin echo
+  builtin echo $outfile
+  builtin echo 
+  
+  # Basic system and zsh information
+  command date
+  command uname -a
+  builtin echo OSTYPE=$OSTYPE
+  builtin echo ZSH_VERSION=$ZSH_VERSION
+  builtin echo User: $USER
+  builtin echo umask: $(umask)
+  builtin echo
+  _omz_diag_dump_os_specific_version
+  builtin echo
+
+  # Installed programs
+  programs=(sh zsh ksh bash sed cat grep ls find git posh)
+  local progfile="" extra_str="" sha_str=""
+  for program in $programs; do
+    extra_str="" sha_str=""
+    progfile=$(builtin which $program)
+    if [[ $? == 0 ]]; then
+      if [[ -e $progfile ]]; then
+        if builtin whence shasum &>/dev/null; then
+          sha_str=($(command shasum $progfile))
+          sha_str=$sha_str[1]
+          extra_str+=" SHA $sha_str"
+        fi
+        if [[ -h "$progfile" ]]; then
+          extra_str+=" ( -> ${progfile:A} )"
+        fi
+      fi
+      builtin printf '%-9s %-20s %s\n' "$program is" "$progfile" "$extra_str"
+    else
+      builtin echo "$program: not found"
+    fi
+  done
+  builtin echo
+  builtin echo Command Versions:
+  builtin echo "zsh: $(zsh --version)"
+  builtin echo "this zsh session: $ZSH_VERSION"
+  builtin echo "bash: $(bash --version | command grep bash)"
+  builtin echo "git: $(git --version)"
+  builtin echo "grep: $(grep --version)"
+  builtin echo
+
+  # Core command definitions
+  _omz_diag_dump_check_core_commands || return 1
+  builtin echo  
+
+  # ZSH Process state
+  builtin echo Process state:
+  builtin echo pwd: $PWD
+  if builtin whence pstree &>/dev/null; then
+    builtin echo Process tree for this shell:
+    pstree -p $$
+  else
+    ps -fT
+  fi
+  builtin set | command grep -a '^\(ZSH\|plugins\|TERM\|LC_\|LANG\|precmd\|chpwd\|preexec\|FPATH\|TTY\|DISPLAY\|PATH\)\|OMZ'
+  builtin echo
+  #TODO: Should this include `env` instead of or in addition to `export`?
+  builtin echo Exported:
+  builtin echo $(builtin export | command sed 's/=.*//')
+  builtin echo 
+  builtin echo Locale:
+  command locale
+  builtin echo
+
+  # Zsh installation and configuration
+  builtin echo Zsh configuration:
+  builtin echo setopt: $(builtin setopt)
+  builtin echo
+  builtin echo zstyle:
+  builtin zstyle
+  builtin echo
+  builtin echo 'compaudit output:'
+  compaudit
+  builtin echo 
+  builtin echo '$fpath directories:'
+  command ls -lad $fpath
+  builtin echo
+
+  # Oh-my-zsh installation
+  builtin echo oh-my-zsh installation:
+  command ls -ld ~/.z*
+  command ls -ld ~/.oh*
+  builtin echo
+  builtin echo oh-my-zsh git state:
+  (cd $ZSH && builtin echo "HEAD: $(git rev-parse HEAD)" && git remote -v && git status | command grep "[^[:space:]]")
+  if [[ $verbose -ge 1 ]]; then
+    (cd $ZSH && git reflog --date=default | command grep pull)
+  fi
+  builtin echo
+  if [[ -e $ZSH_CUSTOM ]]; then
+    local custom_dir=$ZSH_CUSTOM
+    if [[ -h $custom_dir ]]; then
+      custom_dir=$(cd $custom_dir && pwd -P)
+    fi
+    builtin echo "oh-my-zsh custom dir:"
+    builtin echo "   $ZSH_CUSTOM ($custom_dir)"
+    (cd ${custom_dir:h} && command find ${custom_dir:t} -name .git -prune -o -print)
+    builtin echo
+  fi
+
+  # Key binding and terminal info
+  if [[ $verbose -ge 1 ]]; then
+    builtin echo "bindkey:"
+    builtin bindkey
+    builtin echo
+    builtin echo "infocmp:"
+    command infocmp -L
+    builtin echo
+  fi
+
+  # Configuration file info
+  local zdotdir=${ZDOTDIR:-$HOME}
+  builtin echo "Zsh configuration files:"
+  local cfgfile cfgfiles
+  # Some files for bash that zsh does not use are intentionally included
+  # to help with diagnosing behavior differences between bash and zsh
+  cfgfiles=( /etc/zshenv /etc/zprofile /etc/zshrc /etc/zlogin /etc/zlogout 
+    $zdotdir/.zshenv $zdotdir/.zprofile $zdotdir/.zshrc $zdotdir/.zlogin $zdotdir/.zlogout
+    ~/.zsh.pre-oh-my-zsh
+    /etc/bashrc /etc/profile ~/.bashrc ~/.profile ~/.bash_profile ~/.bash_logout )
+  command ls -lad $cfgfiles 2>&1
+  builtin echo
+  if [[ $verbose -ge 1 ]]; then
+    for cfgfile in $cfgfiles; do
+      _omz_diag_dump_echo_file_w_header $cfgfile
+    done
+  fi
+  builtin echo
+  builtin echo "Zsh compdump files:"
+  local dumpfile dumpfiles
+  command ls -lad $zdotdir/.zcompdump*
+  dumpfiles=( $zdotdir/.zcompdump*(N) )
+  if [[ $verbose -ge 2 ]]; then
+    for dumpfile in $dumpfiles; do
+      _omz_diag_dump_echo_file_w_header $dumpfile
+    done
+  fi
+
+}
+
+function _omz_diag_dump_check_core_commands() {
+  builtin echo "Core command check:"
+  local redefined name builtins externals reserved_words
+  redefined=()
+  # All the zsh non-module builtin commands
+  # These are taken from the zsh reference manual for 5.0.2
+  # Commands from modules should not be included.
+  # (For back-compatibility, if any of these are newish, they should be removed,
+  # or at least made conditional on the version of the current running zsh.)
+  # "history" is also excluded because OMZ is known to redefine that
+  reserved_words=( do done esac then elif else fi for case if while function 
+    repeat time until select coproc nocorrect foreach end '!' '[[' '{' '}' 
+    )
+  builtins=( alias autoload bg bindkey break builtin bye cd chdir command
+    comparguments compcall compctl compdescribe compfiles compgroups compquote comptags
+    comptry compvalues continue dirs disable disown echo echotc echoti emulate
+    enable eval exec exit false fc fg functions getln getopts hash
+    jobs kill let limit log logout noglob popd print printf
+    pushd pushln pwd r read rehash return sched set setopt shift
+    source suspend test times trap true ttyctl type ulimit umask unalias
+    unfunction unhash unlimit unset unsetopt vared wait whence where which zcompile
+    zle zmodload zparseopts zregexparse zstyle )
+  if is-at-least 5.1; then
+    reserved_word+=( declare export integer float local readonly typeset )
+  else
+    builtins+=( declare export integer float local readonly typeset )
+  fi
+  builtins_fatal=( builtin command local )
+  externals=( zsh )
+  for name in $reserved_words; do
+    if [[ $(builtin whence -w $name) != "$name: reserved" ]]; then
+      builtin echo "reserved word '$name' has been redefined"
+      builtin which $name
+      redefined+=$name
+    fi
+  done
+  for name in $builtins; do
+    if [[ $(builtin whence -w $name) != "$name: builtin" ]]; then
+      builtin echo "builtin '$name' has been redefined"
+      builtin which $name
+      redefined+=$name
+    fi
+  done
+  for name in $externals; do
+    if [[ $(builtin whence -w $name) != "$name: command" ]]; then
+      builtin echo "command '$name' has been redefined"
+      builtin which $name
+      redefined+=$name
+    fi
+  done
+
+  if [[ -n "$redefined" ]]; then
+    builtin echo "SOME CORE COMMANDS HAVE BEEN REDEFINED: $redefined"
+  else
+    builtin echo "All core commands are defined normally"
+  fi
+
+}
+
+function _omz_diag_dump_echo_file_w_header() {
+  local file=$1
+  if [[ ( -f $file || -h $file ) ]]; then
+    builtin echo "========== $file =========="
+    if [[ -h $file ]]; then
+      builtin echo "==========    ( => ${file:A} )   =========="
+    fi
+    command cat $file
+    builtin echo "========== end $file =========="
+    builtin echo
+  elif [[ -d $file ]]; then
+    builtin echo "File '$file' is a directory"
+  elif [[ ! -e $file ]]; then
+    builtin echo "File '$file' does not exist"
+  else
+    command ls -lad "$file"
+  fi
+}
+
+function _omz_diag_dump_os_specific_version() {
+  local osname osver version_file version_files
+  case "$OSTYPE" in
+    darwin*)
+      osname=$(command sw_vers -productName)
+      osver=$(command sw_vers -productVersion)      
+      builtin echo "OS Version: $osname $osver build $(sw_vers -buildVersion)"
+      ;;
+    cygwin)
+      command systeminfo | command head -4 | command tail -2
+      ;;
+  esac
+
+  if builtin which lsb_release >/dev/null; then
+    builtin echo "OS Release: $(command lsb_release -s -d)"
+  fi
+
+  version_files=( /etc/*-release(N) /etc/*-version(N) /etc/*_version(N) )
+  for version_file in $version_files; do
+    builtin echo "$version_file:"
+    command cat "$version_file"
+    builtin echo
+  done
+}
+;#-- END SOURCE
+#-- SOURCE: /home/raikia/.antigen/repos/https-COLON--SLASH--SLASH-github.com-SLASH-robbyrussell-SLASH-oh-my-zsh.git/lib/directories.zsh
+# Changing/making/removing directory
+setopt auto_pushd
+setopt pushd_ignore_dups
+setopt pushdminus
+
+alias -g ...='../..'
+alias -g ....='../../..'
+alias -g .....='../../../..'
+alias -g ......='../../../../..'
+
+alias -- -='cd -'
+alias 1='cd -'
+alias 2='cd -2'
+alias 3='cd -3'
+alias 4='cd -4'
+alias 5='cd -5'
+alias 6='cd -6'
+alias 7='cd -7'
+alias 8='cd -8'
+alias 9='cd -9'
+
+alias md='mkdir -p'
+alias rd=rmdir
+alias d='dirs -v | head -10'
+
+# List directory contents
+alias lsa='ls -lah'
+alias l='ls -lah'
+alias ll='ls -lh'
+alias la='ls -lAh'
+
+# Push and pop directories on directory stack
+alias pu='pushd'
+alias po='popd'
+;#-- END SOURCE
+#-- SOURCE: /home/raikia/.antigen/repos/https-COLON--SLASH--SLASH-github.com-SLASH-robbyrussell-SLASH-oh-my-zsh.git/lib/functions.zsh
+function zsh_stats() {
+  fc -l 1 | awk '{CMD[$2]++;count++;}END { for (a in CMD)print CMD[a] " " CMD[a]/count*100 "% " a;}' | grep -v "./" | column -c3 -s " " -t | sort -nr | nl |  head -n20
+}
+
+function uninstall_oh_my_zsh() {
+  env ZSH=$ZSH sh $ZSH/tools/uninstall.sh
+}
+
+function upgrade_oh_my_zsh() {
+  env ZSH=$ZSH sh $ZSH/tools/upgrade.sh
+}
+
+function take() {
+  mkdir -p $1
+  cd $1
+}
+
+function open_command() {
+  emulate -L zsh
+  setopt shwordsplit
+
+  local open_cmd
+
+  # define the open command
+  case "$OSTYPE" in
+    darwin*)  open_cmd='open' ;;
+    cygwin*)  open_cmd='cygstart' ;;
+    linux*)   open_cmd='xdg-open' ;;
+    msys*)    open_cmd='start ""' ;;
+    *)        echo "Platform $OSTYPE not supported"
+              return 1
+              ;;
+  esac
+
+  # don't use nohup on OSX
+  if [[ "$OSTYPE" == darwin* ]]; then
+    $open_cmd "$@" &>/dev/null
+  else
+    nohup $open_cmd "$@" &>/dev/null
+  fi
+}
+
+#
+# Get the value of an alias.
+#
+# Arguments:
+#    1. alias - The alias to get its value from
+# STDOUT:
+#    The value of alias $1 (if it has one).
+# Return value:
+#    0 if the alias was found,
+#    1 if it does not exist
+#
+function alias_value() {
+    alias "$1" | sed "s/^$1='\(.*\)'$/\1/"
+    test $(alias "$1")
+}
+
+#
+# Try to get the value of an alias,
+# otherwise return the input.
+#
+# Arguments:
+#    1. alias - The alias to get its value from
+# STDOUT:
+#    The value of alias $1, or $1 if there is no alias $1.
+# Return value:
+#    Always 0
+#
+function try_alias_value() {
+    alias_value "$1" || echo "$1"
+}
+
+#
+# Set variable "$1" to default value "$2" if "$1" is not yet defined.
+#
+# Arguments:
+#    1. name - The variable to set
+#    2. val  - The default value
+# Return value:
+#    0 if the variable exists, 3 if it was set
+#
+function default() {
+    test `typeset +m "$1"` && return 0
+    typeset -g "$1"="$2"   && return 3
+}
+
+#
+# Set environment variable "$1" to default value "$2" if "$1" is not yet defined.
+#
+# Arguments:
+#    1. name - The env variable to set
+#    2. val  - The default value
+# Return value:
+#    0 if the env variable exists, 3 if it was set
+#
+function env_default() {
+    env | grep -q "^$1=" && return 0
+    export "$1=$2"       && return 3
+}
+
+
+# Required for $langinfo
+zmodload zsh/langinfo
+
+# URL-encode a string
+#
+# Encodes a string using RFC 2396 URL-encoding (%-escaped).
+# See: https://www.ietf.org/rfc/rfc2396.txt
+#
+# By default, reserved characters and unreserved "mark" characters are
+# not escaped by this function. This allows the common usage of passing
+# an entire URL in, and encoding just special characters in it, with
+# the expectation that reserved and mark characters are used appropriately.
+# The -r and -m options turn on escaping of the reserved and mark characters,
+# respectively, which allows arbitrary strings to be fully escaped for
+# embedding inside URLs, where reserved characters might be misinterpreted.
+#
+# Prints the encoded string on stdout.
+# Returns nonzero if encoding failed.
+#
+# Usage:
+#  omz_urlencode [-r] [-m] [-P] <string>
+#
+#    -r causes reserved characters (;/?:@&=+$,) to be escaped
+#
+#    -m causes "mark" characters (_.!~*''()-) to be escaped
+#
+#    -P causes spaces to be encoded as '%20' instead of '+'
+function omz_urlencode() {
+  emulate -L zsh
+  zparseopts -D -E -a opts r m P
+
+  local in_str=$1
+  local url_str=""
+  local spaces_as_plus
+  if [[ -z $opts[(r)-P] ]]; then spaces_as_plus=1; fi
+  local str="$in_str"
+
+  # URLs must use UTF-8 encoding; convert str to UTF-8 if required
+  local encoding=$langinfo[CODESET]
+  local safe_encodings
+  safe_encodings=(UTF-8 utf8 US-ASCII)
+  if [[ -z ${safe_encodings[(r)$encoding]} ]]; then
+    str=$(echo -E "$str" | iconv -f $encoding -t UTF-8)
+    if [[ $? != 0 ]]; then
+      echo "Error converting string from $encoding to UTF-8" >&2
+      return 1
+    fi
+  fi
+
+  # Use LC_CTYPE=C to process text byte-by-byte
+  local i byte ord LC_ALL=C
+  export LC_ALL
+  local reserved=';/?:@&=+$,'
+  local mark='_.!~*''()-'
+  local dont_escape="[A-Za-z0-9"
+  if [[ -z $opts[(r)-r] ]]; then
+    dont_escape+=$reserved
+  fi
+  # $mark must be last because of the "-"
+  if [[ -z $opts[(r)-m] ]]; then
+    dont_escape+=$mark
+  fi
+  dont_escape+="]"
+
+  # Implemented to use a single printf call and avoid subshells in the loop,
+  # for performance (primarily on Windows).
+  local url_str=""
+  for (( i = 1; i <= ${#str}; ++i )); do
+    byte="$str[i]"
+    if [[ "$byte" =~ "$dont_escape" ]]; then
+      url_str+="$byte"
+    else
+      if [[ "$byte" == " " && -n $spaces_as_plus ]]; then
+        url_str+="+"
+      else
+        ord=$(( [##16] #byte ))
+        url_str+="%$ord"
+      fi
+    fi
+  done
+  echo -E "$url_str"
+}
+
+# URL-decode a string
+#
+# Decodes a RFC 2396 URL-encoded (%-escaped) string.
+# This decodes the '+' and '%' escapes in the input string, and leaves
+# other characters unchanged. Does not enforce that the input is a
+# valid URL-encoded string. This is a convenience to allow callers to
+# pass in a full URL or similar strings and decode them for human
+# presentation.
+#
+# Outputs the encoded string on stdout.
+# Returns nonzero if encoding failed.
+#
+# Usage:
+#   omz_urldecode <urlstring>  - prints decoded string followed by a newline
+function omz_urldecode {
+  emulate -L zsh
+  local encoded_url=$1
+
+  # Work bytewise, since URLs escape UTF-8 octets
+  local caller_encoding=$langinfo[CODESET]
+  local LC_ALL=C
+  export LC_ALL
+
+  # Change + back to ' '
+  local tmp=${encoded_url:gs/+/ /}
+  # Protect other escapes to pass through the printf unchanged
+  tmp=${tmp:gs/\\/\\\\/}
+  # Handle %-escapes by turning them into `\xXX` printf escapes
+  tmp=${tmp:gs/%/\\x/}
+  local decoded
+  eval "decoded=\$'$tmp'"
+
+  # Now we have a UTF-8 encoded string in the variable. We need to re-encode
+  # it if caller is in a non-UTF-8 locale.
+  local safe_encodings
+  safe_encodings=(UTF-8 utf8 US-ASCII)
+  if [[ -z ${safe_encodings[(r)$caller_encoding]} ]]; then
+    decoded=$(echo -E "$decoded" | iconv -f UTF-8 -t $caller_encoding)
+    if [[ $? != 0 ]]; then
+      echo "Error converting string from UTF-8 to $caller_encoding" >&2
+      return 1
+    fi
+  fi
+
+  echo -E "$decoded"
+}
+;#-- END SOURCE
+#-- SOURCE: /home/raikia/.antigen/repos/https-COLON--SLASH--SLASH-github.com-SLASH-robbyrussell-SLASH-oh-my-zsh.git/lib/git.zsh
+# Outputs current branch info in prompt format
+function git_prompt_info() {
+  local ref
+  if [[ "$(command git config --get oh-my-zsh.hide-status 2>/dev/null)" != "1" ]]; then
+    ref=$(command git symbolic-ref HEAD 2> /dev/null) || \
+    ref=$(command git rev-parse --short HEAD 2> /dev/null) || return 0
+    echo "$ZSH_THEME_GIT_PROMPT_PREFIX${ref#refs/heads/}$(parse_git_dirty)$ZSH_THEME_GIT_PROMPT_SUFFIX"
+  fi
+}
+
+# Checks if working tree is dirty
+function parse_git_dirty() {
+  local STATUS=''
+  local FLAGS
+  FLAGS=('--porcelain')
+  if [[ "$(command git config --get oh-my-zsh.hide-dirty)" != "1" ]]; then
+    if [[ $POST_1_7_2_GIT -gt 0 ]]; then
+      FLAGS+='--ignore-submodules=dirty'
+    fi
+    if [[ "$DISABLE_UNTRACKED_FILES_DIRTY" == "true" ]]; then
+      FLAGS+='--untracked-files=no'
+    fi
+    STATUS=$(command git status ${FLAGS} 2> /dev/null | tail -n1)
+  fi
+  if [[ -n $STATUS ]]; then
+    echo "$ZSH_THEME_GIT_PROMPT_DIRTY"
+  else
+    echo "$ZSH_THEME_GIT_PROMPT_CLEAN"
+  fi
+}
+
+# Gets the difference between the local and remote branches
+function git_remote_status() {
+    local remote ahead behind git_remote_status git_remote_status_detailed
+    remote=${$(command git rev-parse --verify ${hook_com[branch]}@{upstream} --symbolic-full-name 2>/dev/null)/refs\/remotes\/}
+    if [[ -n ${remote} ]]; then
+        ahead=$(command git rev-list ${hook_com[branch]}@{upstream}..HEAD 2>/dev/null | wc -l)
+        behind=$(command git rev-list HEAD..${hook_com[branch]}@{upstream} 2>/dev/null | wc -l)
+
+        if [[ $ahead -eq 0 ]] && [[ $behind -eq 0 ]]; then
+            git_remote_status="$ZSH_THEME_GIT_PROMPT_EQUAL_REMOTE"
+        elif [[ $ahead -gt 0 ]] && [[ $behind -eq 0 ]]; then
+            git_remote_status="$ZSH_THEME_GIT_PROMPT_AHEAD_REMOTE"
+            git_remote_status_detailed="$ZSH_THEME_GIT_PROMPT_AHEAD_REMOTE_COLOR$ZSH_THEME_GIT_PROMPT_AHEAD_REMOTE$((ahead))%{$reset_color%}"
+        elif [[ $behind -gt 0 ]] && [[ $ahead -eq 0 ]]; then
+            git_remote_status="$ZSH_THEME_GIT_PROMPT_BEHIND_REMOTE"
+            git_remote_status_detailed="$ZSH_THEME_GIT_PROMPT_BEHIND_REMOTE_COLOR$ZSH_THEME_GIT_PROMPT_BEHIND_REMOTE$((behind))%{$reset_color%}"
+        elif [[ $ahead -gt 0 ]] && [[ $behind -gt 0 ]]; then
+            git_remote_status="$ZSH_THEME_GIT_PROMPT_DIVERGED_REMOTE"
+            git_remote_status_detailed="$ZSH_THEME_GIT_PROMPT_AHEAD_REMOTE_COLOR$ZSH_THEME_GIT_PROMPT_AHEAD_REMOTE$((ahead))%{$reset_color%}$ZSH_THEME_GIT_PROMPT_BEHIND_REMOTE_COLOR$ZSH_THEME_GIT_PROMPT_BEHIND_REMOTE$((behind))%{$reset_color%}"
+        fi
+
+        if [[ -n $ZSH_THEME_GIT_PROMPT_REMOTE_STATUS_DETAILED ]]; then
+            git_remote_status="$ZSH_THEME_GIT_PROMPT_REMOTE_STATUS_PREFIX$remote$git_remote_status_detailed$ZSH_THEME_GIT_PROMPT_REMOTE_STATUS_SUFFIX"
+        fi
+
+        echo $git_remote_status
+    fi
+}
+
+# Outputs the name of the current branch
+# Usage example: git pull origin $(git_current_branch)
+# Using '--quiet' with 'symbolic-ref' will not cause a fatal error (128) if
+# it's not a symbolic ref, but in a Git repo.
+function git_current_branch() {
+  local ref
+  ref=$(command git symbolic-ref --quiet HEAD 2> /dev/null)
+  local ret=$?
+  if [[ $ret != 0 ]]; then
+    [[ $ret == 128 ]] && return  # no git repo.
+    ref=$(command git rev-parse --short HEAD 2> /dev/null) || return
+  fi
+  echo ${ref#refs/heads/}
+}
+
+
+# Gets the number of commits ahead from remote
+function git_commits_ahead() {
+  if command git rev-parse --git-dir &>/dev/null; then
+    local commits="$(git rev-list --count @{upstream}..HEAD)"
+    if [[ "$commits" != 0 ]]; then
+      echo "$ZSH_THEME_GIT_COMMITS_AHEAD_PREFIX$commits$ZSH_THEME_GIT_COMMITS_AHEAD_SUFFIX"
+    fi
+  fi
+}
+
+# Gets the number of commits behind remote
+function git_commits_behind() {
+  if command git rev-parse --git-dir &>/dev/null; then
+    local commits="$(git rev-list --count HEAD..@{upstream})"
+    if [[ "$commits" != 0 ]]; then
+      echo "$ZSH_THEME_GIT_COMMITS_BEHIND_PREFIX$commits$ZSH_THEME_GIT_COMMITS_BEHIND_SUFFIX"
+    fi
+  fi
+}
+
+# Outputs if current branch is ahead of remote
+function git_prompt_ahead() {
+  if [[ -n "$(command git rev-list origin/$(git_current_branch)..HEAD 2> /dev/null)" ]]; then
+    echo "$ZSH_THEME_GIT_PROMPT_AHEAD"
+  fi
+}
+
+# Outputs if current branch is behind remote
+function git_prompt_behind() {
+  if [[ -n "$(command git rev-list HEAD..origin/$(git_current_branch) 2> /dev/null)" ]]; then
+    echo "$ZSH_THEME_GIT_PROMPT_BEHIND"
+  fi
+}
+
+# Outputs if current branch exists on remote or not
+function git_prompt_remote() {
+  if [[ -n "$(command git show-ref origin/$(git_current_branch) 2> /dev/null)" ]]; then
+    echo "$ZSH_THEME_GIT_PROMPT_REMOTE_EXISTS"
+  else
+    echo "$ZSH_THEME_GIT_PROMPT_REMOTE_MISSING"
+  fi
+}
+
+# Formats prompt string for current git commit short SHA
+function git_prompt_short_sha() {
+  local SHA
+  SHA=$(command git rev-parse --short HEAD 2> /dev/null) && echo "$ZSH_THEME_GIT_PROMPT_SHA_BEFORE$SHA$ZSH_THEME_GIT_PROMPT_SHA_AFTER"
+}
+
+# Formats prompt string for current git commit long SHA
+function git_prompt_long_sha() {
+  local SHA
+  SHA=$(command git rev-parse HEAD 2> /dev/null) && echo "$ZSH_THEME_GIT_PROMPT_SHA_BEFORE$SHA$ZSH_THEME_GIT_PROMPT_SHA_AFTER"
+}
+
+# Get the status of the working tree
+function git_prompt_status() {
+  local INDEX STATUS
+  INDEX=$(command git status --porcelain -b 2> /dev/null)
+  STATUS=""
+  if $(echo "$INDEX" | command grep -E '^\?\? ' &> /dev/null); then
+    STATUS="$ZSH_THEME_GIT_PROMPT_UNTRACKED$STATUS"
+  fi
+  if $(echo "$INDEX" | grep '^A  ' &> /dev/null); then
+    STATUS="$ZSH_THEME_GIT_PROMPT_ADDED$STATUS"
+  elif $(echo "$INDEX" | grep '^M  ' &> /dev/null); then
+    STATUS="$ZSH_THEME_GIT_PROMPT_ADDED$STATUS"
+  fi
+  if $(echo "$INDEX" | grep '^ M ' &> /dev/null); then
+    STATUS="$ZSH_THEME_GIT_PROMPT_MODIFIED$STATUS"
+  elif $(echo "$INDEX" | grep '^AM ' &> /dev/null); then
+    STATUS="$ZSH_THEME_GIT_PROMPT_MODIFIED$STATUS"
+  elif $(echo "$INDEX" | grep '^ T ' &> /dev/null); then
+    STATUS="$ZSH_THEME_GIT_PROMPT_MODIFIED$STATUS"
+  fi
+  if $(echo "$INDEX" | grep '^R  ' &> /dev/null); then
+    STATUS="$ZSH_THEME_GIT_PROMPT_RENAMED$STATUS"
+  fi
+  if $(echo "$INDEX" | grep '^ D ' &> /dev/null); then
+    STATUS="$ZSH_THEME_GIT_PROMPT_DELETED$STATUS"
+  elif $(echo "$INDEX" | grep '^D  ' &> /dev/null); then
+    STATUS="$ZSH_THEME_GIT_PROMPT_DELETED$STATUS"
+  elif $(echo "$INDEX" | grep '^AD ' &> /dev/null); then
+    STATUS="$ZSH_THEME_GIT_PROMPT_DELETED$STATUS"
+  fi
+  if $(command git rev-parse --verify refs/stash >/dev/null 2>&1); then
+    STATUS="$ZSH_THEME_GIT_PROMPT_STASHED$STATUS"
+  fi
+  if $(echo "$INDEX" | grep '^UU ' &> /dev/null); then
+    STATUS="$ZSH_THEME_GIT_PROMPT_UNMERGED$STATUS"
+  fi
+  if $(echo "$INDEX" | grep '^## [^ ]\+ .*ahead' &> /dev/null); then
+    STATUS="$ZSH_THEME_GIT_PROMPT_AHEAD$STATUS"
+  fi
+  if $(echo "$INDEX" | grep '^## [^ ]\+ .*behind' &> /dev/null); then
+    STATUS="$ZSH_THEME_GIT_PROMPT_BEHIND$STATUS"
+  fi
+  if $(echo "$INDEX" | grep '^## [^ ]\+ .*diverged' &> /dev/null); then
+    STATUS="$ZSH_THEME_GIT_PROMPT_DIVERGED$STATUS"
+  fi
+  echo $STATUS
+}
+
+# Compares the provided version of git to the version installed and on path
+# Outputs -1, 0, or 1 if the installed version is less than, equal to, or
+# greater than the input version, respectively.
+function git_compare_version() {
+  local INPUT_GIT_VERSION INSTALLED_GIT_VERSION
+  INPUT_GIT_VERSION=(${(s/./)1})
+  INSTALLED_GIT_VERSION=($(command git --version 2>/dev/null))
+  INSTALLED_GIT_VERSION=(${(s/./)INSTALLED_GIT_VERSION[3]})
+
+  for i in {1..3}; do
+    if [[ $INSTALLED_GIT_VERSION[$i] -gt $INPUT_GIT_VERSION[$i] ]]; then
+      echo 1
+      return 0
+    fi
+    if [[ $INSTALLED_GIT_VERSION[$i] -lt $INPUT_GIT_VERSION[$i] ]]; then
+      echo -1
+      return 0
+    fi
+  done
+  echo 0
+}
+
+# Outputs the name of the current user
+# Usage example: $(git_current_user_name)
+function git_current_user_name() {
+  command git config user.name 2>/dev/null
+}
+
+# Outputs the email of the current user
+# Usage example: $(git_current_user_email)
+function git_current_user_email() {
+  command git config user.email 2>/dev/null
+}
+
+# This is unlikely to change so make it all statically assigned
+POST_1_7_2_GIT=$(git_compare_version "1.7.2")
+# Clean up the namespace slightly by removing the checker function
+unfunction git_compare_version
+;#-- END SOURCE
+#-- SOURCE: /home/raikia/.antigen/repos/https-COLON--SLASH--SLASH-github.com-SLASH-robbyrussell-SLASH-oh-my-zsh.git/lib/grep.zsh
+# is x grep argument available?
+grep-flag-available() {
+    echo | grep $1 "" >/dev/null 2>&1
+}
+
+GREP_OPTIONS=""
+
+# color grep results
+if grep-flag-available --color=auto; then
+    GREP_OPTIONS+=" --color=auto"
+fi
+
+# ignore VCS folders (if the necessary grep flags are available)
+VCS_FOLDERS="{.bzr,CVS,.git,.hg,.svn}"
+
+if grep-flag-available --exclude-dir=.cvs; then
+    GREP_OPTIONS+=" --exclude-dir=$VCS_FOLDERS"
+elif grep-flag-available --exclude=.cvs; then
+    GREP_OPTIONS+=" --exclude=$VCS_FOLDERS"
+fi
+
+# export grep settings
+alias grep="grep $GREP_OPTIONS"
+
+# clean up
+unset GREP_OPTIONS
+unset VCS_FOLDERS
+unfunction grep-flag-available
+;#-- END SOURCE
+#-- SOURCE: /home/raikia/.antigen/repos/https-COLON--SLASH--SLASH-github.com-SLASH-robbyrussell-SLASH-oh-my-zsh.git/lib/history.zsh
+## Command history configuration
+if [ -z "$HISTFILE" ]; then
+    HISTFILE=$HOME/.zsh_history
+fi
+
+HISTSIZE=10000
+SAVEHIST=10000
+
+# Show history
+case $HIST_STAMPS in
+  "mm/dd/yyyy") alias history='fc -fl 1' ;;
+  "dd.mm.yyyy") alias history='fc -El 1' ;;
+  "yyyy-mm-dd") alias history='fc -il 1' ;;
+  *) alias history='fc -l 1' ;;
+esac
+
+setopt append_history
+setopt extended_history
+setopt hist_expire_dups_first
+setopt hist_ignore_dups # ignore duplication command history list
+setopt hist_ignore_space
+setopt hist_verify
+setopt inc_append_history
+setopt share_history # share command history data
+;#-- END SOURCE
+#-- SOURCE: /home/raikia/.antigen/repos/https-COLON--SLASH--SLASH-github.com-SLASH-robbyrussell-SLASH-oh-my-zsh.git/lib/key-bindings.zsh
+# http://zsh.sourceforge.net/Doc/Release/Zsh-Line-Editor.html
+# http://zsh.sourceforge.net/Doc/Release/Zsh-Line-Editor.html#Zle-Builtins
+# http://zsh.sourceforge.net/Doc/Release/Zsh-Line-Editor.html#Standard-Widgets
+
+# Make sure that the terminal is in application mode when zle is active, since
+# only then values from $terminfo are valid
+if (( ${+terminfo[smkx]} )) && (( ${+terminfo[rmkx]} )); then
+  function zle-line-init() {
+    echoti smkx
+  }
+  function zle-line-finish() {
+    echoti rmkx
+  }
+  zle -N zle-line-init
+  zle -N zle-line-finish
+fi
+
+bindkey -e                                            # Use emacs key bindings
+
+bindkey '\ew' kill-region                             # [Esc-w] - Kill from the cursor to the mark
+bindkey -s '\el' 'ls\n'                               # [Esc-l] - run command: ls
+bindkey '^r' history-incremental-search-backward      # [Ctrl-r] - Search backward incrementally for a specified string. The string may begin with ^ to anchor the search to the beginning of the line.
+if [[ "${terminfo[kpp]}" != "" ]]; then
+  bindkey "${terminfo[kpp]}" up-line-or-history       # [PageUp] - Up a line of history
+fi
+if [[ "${terminfo[knp]}" != "" ]]; then
+  bindkey "${terminfo[knp]}" down-line-or-history     # [PageDown] - Down a line of history
+fi
+
+# start typing + [Up-Arrow] - fuzzy find history forward
+if [[ "${terminfo[kcuu1]}" != "" ]]; then
+  autoload -U up-line-or-beginning-search
+  zle -N up-line-or-beginning-search
+  bindkey "${terminfo[kcuu1]}" up-line-or-beginning-search
+fi
+# start typing + [Down-Arrow] - fuzzy find history backward
+if [[ "${terminfo[kcud1]}" != "" ]]; then
+  autoload -U down-line-or-beginning-search
+  zle -N down-line-or-beginning-search
+  bindkey "${terminfo[kcud1]}" down-line-or-beginning-search
+fi
+
+if [[ "${terminfo[khome]}" != "" ]]; then
+  bindkey "${terminfo[khome]}" beginning-of-line      # [Home] - Go to beginning of line
+fi
+if [[ "${terminfo[kend]}" != "" ]]; then
+  bindkey "${terminfo[kend]}"  end-of-line            # [End] - Go to end of line
+fi
+
+bindkey ' ' magic-space                               # [Space] - do history expansion
+
+bindkey '^[[1;5C' forward-word                        # [Ctrl-RightArrow] - move forward one word
+bindkey '^[[1;5D' backward-word                       # [Ctrl-LeftArrow] - move backward one word
+
+if [[ "${terminfo[kcbt]}" != "" ]]; then
+  bindkey "${terminfo[kcbt]}" reverse-menu-complete   # [Shift-Tab] - move through the completion menu backwards
+fi
+
+bindkey '^?' backward-delete-char                     # [Backspace] - delete backward
+if [[ "${terminfo[kdch1]}" != "" ]]; then
+  bindkey "${terminfo[kdch1]}" delete-char            # [Delete] - delete forward
+else
+  bindkey "^[[3~" delete-char
+  bindkey "^[3;5~" delete-char
+  bindkey "\e[3~" delete-char
+fi
+
+# Edit the current command line in $EDITOR
+autoload -U edit-command-line
+zle -N edit-command-line
+bindkey '\C-x\C-e' edit-command-line
+
+# file rename magick
+bindkey "^[m" copy-prev-shell-word
+
+# consider emacs keybindings:
+
+#bindkey -e  ## emacs key bindings
+#
+#bindkey '^[[A' up-line-or-search
+#bindkey '^[[B' down-line-or-search
+#bindkey '^[^[[C' emacs-forward-word
+#bindkey '^[^[[D' emacs-backward-word
+#
+#bindkey -s '^X^Z' '%-^M'
+#bindkey '^[e' expand-cmd-path
+#bindkey '^[^I' reverse-menu-complete
+#bindkey '^X^N' accept-and-infer-next-history
+#bindkey '^W' kill-region
+#bindkey '^I' complete-word
+## Fix weird sequence that rxvt produces
+#bindkey -s '^[[Z' '\t'
+#
+;#-- END SOURCE
+#-- SOURCE: /home/raikia/.antigen/repos/https-COLON--SLASH--SLASH-github.com-SLASH-robbyrussell-SLASH-oh-my-zsh.git/lib/misc.zsh
+## Load smart urls if available
+# bracketed-paste-magic is known buggy in zsh 5.1.1 (only), so skip it there; see #4434
+autoload -Uz is-at-least
+if [[ $ZSH_VERSION != 5.1.1 ]]; then
+  for d in $fpath; do
+  	if [[ -e "$d/url-quote-magic" ]]; then
+  		if is-at-least 5.1; then
+  			autoload -Uz bracketed-paste-magic
+  			zle -N bracketed-paste bracketed-paste-magic
+  		fi
+  		autoload -Uz url-quote-magic
+  		zle -N self-insert url-quote-magic
+      break
+  	fi
+  done
+fi
+
+## jobs
+setopt long_list_jobs
+
+## pager
+env_default PAGER 'less'
+env_default LESS '-R'
+
+## super user alias
+alias _='sudo'
+alias please='sudo'
+
+## more intelligent acking for ubuntu users
+if which ack-grep &> /dev/null; then
+  alias afind='ack-grep -il'
+else
+  alias afind='ack -il'
+fi
+
+# only define LC_CTYPE if undefined
+if [[ -z "$LC_CTYPE" && -z "$LC_ALL" ]]; then
+	export LC_CTYPE=${LANG%%:*} # pick the first entry from LANG
+fi
+
+# recognize comments
+setopt interactivecomments
+;#-- END SOURCE
+#-- SOURCE: /home/raikia/.antigen/repos/https-COLON--SLASH--SLASH-github.com-SLASH-robbyrussell-SLASH-oh-my-zsh.git/lib/nvm.zsh
+# get the node.js version
+function nvm_prompt_info() {
+  [[ -f "$NVM_DIR/nvm.sh" ]] || return
+  local nvm_prompt
+  nvm_prompt=$(node -v 2>/dev/null)
+  [[ "${nvm_prompt}x" == "x" ]] && return
+  nvm_prompt=${nvm_prompt:1}
+  echo "${ZSH_THEME_NVM_PROMPT_PREFIX}${nvm_prompt}${ZSH_THEME_NVM_PROMPT_SUFFIX}"
+}
+;#-- END SOURCE
+#-- SOURCE: /home/raikia/.antigen/repos/https-COLON--SLASH--SLASH-github.com-SLASH-robbyrussell-SLASH-oh-my-zsh.git/lib/prompt_info_functions.zsh
+# *_prompt_info functions for usage in your prompt
+#
+# Plugin creators, please add your *_prompt_info function to the list
+# of dummy implementations to help theme creators not receiving errors
+# without the need of implementing conditional clauses.
+#
+# See also lib/bzr.zsh, lib/git.zsh and lib/nvm.zsh for
+# git_prompt_info, bzr_prompt_info and nvm_prompt_info
+
+# Dummy implementations that return false to prevent command_not_found
+# errors with themes, that implement these functions
+# Real implementations will be used when the respective plugins are loaded
+function chruby_prompt_info hg_prompt_info pyenv_prompt_info \
+  rbenv_prompt_info svn_prompt_info vi_mode_prompt_info \
+  virtualenv_prompt_info {
+  return 1
+}
+
+# oh-my-zsh supports an rvm prompt by default
+# get the name of the rvm ruby version
+function rvm_prompt_info() {
+  [ -f $HOME/.rvm/bin/rvm-prompt ] || return 1
+  local rvm_prompt
+  rvm_prompt=$($HOME/.rvm/bin/rvm-prompt ${=ZSH_THEME_RVM_PROMPT_OPTIONS} 2>/dev/null)
+  [[ "${rvm_prompt}x" == "x" ]] && return 1
+  echo "${ZSH_THEME_RVM_PROMPT_PREFIX:=(}${rvm_prompt}${ZSH_THEME_RVM_PROMPT_SUFFIX:=)}"
+}
+
+# use this to enable users to see their ruby version, no matter which
+# version management system they use
+function ruby_prompt_info() {
+  echo $(rvm_prompt_info || rbenv_prompt_info || chruby_prompt_info)
+}
+;#-- END SOURCE
+#-- SOURCE: /home/raikia/.antigen/repos/https-COLON--SLASH--SLASH-github.com-SLASH-robbyrussell-SLASH-oh-my-zsh.git/lib/spectrum.zsh
+#! /bin/zsh
+# A script to make using 256 colors in zsh less painful.
+# P.C. Shyamshankar <sykora@lucentbeing.com>
+# Copied from http://github.com/sykora/etc/blob/master/zsh/functions/spectrum/
+
+typeset -AHg FX FG BG
+
+FX=(
+    reset     "%{[00m%}"
+    bold      "%{[01m%}" no-bold      "%{[22m%}"
+    italic    "%{[03m%}" no-italic    "%{[23m%}"
+    underline "%{[04m%}" no-underline "%{[24m%}"
+    blink     "%{[05m%}" no-blink     "%{[25m%}"
+    reverse   "%{[07m%}" no-reverse   "%{[27m%}"
+)
+
+for color in {000..255}; do
+    FG[$color]="%{[38;5;${color}m%}"
+    BG[$color]="%{[48;5;${color}m%}"
+done
+
+
+ZSH_SPECTRUM_TEXT=${ZSH_SPECTRUM_TEXT:-Arma virumque cano Troiae qui primus ab oris}
+
+# Show all 256 colors with color number
+function spectrum_ls() {
+  for code in {000..255}; do
+    print -P -- "$code: %{$FG[$code]%}$ZSH_SPECTRUM_TEXT%{$reset_color%}"
+  done
+}
+
+# Show all 256 colors where the background is set to specific color
+function spectrum_bls() {
+  for code in {000..255}; do
+    print -P -- "$code: %{$BG[$code]%}$ZSH_SPECTRUM_TEXT%{$reset_color%}"
+  done
+}
+;#-- END SOURCE
+#-- SOURCE: /home/raikia/.antigen/repos/https-COLON--SLASH--SLASH-github.com-SLASH-robbyrussell-SLASH-oh-my-zsh.git/lib/termsupport.zsh
+# Set terminal window and tab/icon title
+#
+# usage: title short_tab_title [long_window_title]
+#
+# See: http://www.faqs.org/docs/Linux-mini/Xterm-Title.html#ss3.1
+# Fully supports screen, iterm, and probably most modern xterm and rxvt
+# (In screen, only short_tab_title is used)
+# Limited support for Apple Terminal (Terminal can't set window and tab separately)
+function title {
+  emulate -L zsh
+  setopt prompt_subst
+
+  [[ "$EMACS" == *term* ]] && return
+
+  # if $2 is unset use $1 as default
+  # if it is set and empty, leave it as is
+  : ${2=$1}
+
+  case "$TERM" in
+    cygwin|xterm*|putty*|rxvt*|ansi)
+      print -Pn "\e]2;$2:q\a" # set window name
+      print -Pn "\e]1;$1:q\a" # set tab name
+      ;;
+    screen*)
+      print -Pn "\ek$1:q\e\\" # set screen hardstatus
+      ;;
+    *)
+      if [[ "$TERM_PROGRAM" == "iTerm.app" ]]; then
+        print -Pn "\e]2;$2:q\a" # set window name
+        print -Pn "\e]1;$1:q\a" # set tab name
+      else
+        # Try to use terminfo to set the title
+        # If the feature is available set title
+        if [[ -n "$terminfo[fsl]" ]] && [[ -n "$terminfo[tsl]" ]]; then
+	  echoti tsl
+	  print -Pn "$1"
+	  echoti fsl
+	fi
+      fi
+      ;;
+  esac
+}
+
+ZSH_THEME_TERM_TAB_TITLE_IDLE="%15<..<%~%<<" #15 char left truncated PWD
+ZSH_THEME_TERM_TITLE_IDLE="%n@%m: %~"
+# Avoid duplication of directory in terminals with independent dir display
+if [[ "$TERM_PROGRAM" == Apple_Terminal ]]; then
+  ZSH_THEME_TERM_TITLE_IDLE="%n@%m"
+fi
+
+# Runs before showing the prompt
+function omz_termsupport_precmd {
+  emulate -L zsh
+
+  if [[ "$DISABLE_AUTO_TITLE" == true ]]; then
+    return
+  fi
+
+  title $ZSH_THEME_TERM_TAB_TITLE_IDLE $ZSH_THEME_TERM_TITLE_IDLE
+}
+
+# Runs before executing the command
+function omz_termsupport_preexec {
+  emulate -L zsh
+  setopt extended_glob
+
+  if [[ "$DISABLE_AUTO_TITLE" == true ]]; then
+    return
+  fi
+
+  # cmd name only, or if this is sudo or ssh, the next cmd
+  local CMD=${1[(wr)^(*=*|sudo|ssh|mosh|rake|-*)]:gs/%/%%}
+  local LINE="${2:gs/%/%%}"
+
+  title '$CMD' '%100>...>$LINE%<<'
+}
+
+precmd_functions+=(omz_termsupport_precmd)
+preexec_functions+=(omz_termsupport_preexec)
+
+
+# Keep Apple Terminal.app's current working directory updated
+# Based on this answer: http://superuser.com/a/315029
+# With extra fixes to handle multibyte chars and non-UTF-8 locales
+
+if [[ "$TERM_PROGRAM" == "Apple_Terminal" ]] && [[ -z "$INSIDE_EMACS" ]]; then
+  # Emits the control sequence to notify Terminal.app of the cwd
+  # Identifies the directory using a file: URI scheme, including
+  # the host name to disambiguate local vs. remote paths.
+  function update_terminalapp_cwd() {
+    emulate -L zsh
+
+    # Percent-encode the pathname.
+    local URL_PATH="$(omz_urlencode -P $PWD)"
+    [[ $? != 0 ]] && return 1
+
+    # Undocumented Terminal.app-specific control sequence
+    printf '\e]7;%s\a' "file://$HOST$URL_PATH"
+  }
+
+  # Use a precmd hook instead of a chpwd hook to avoid contaminating output
+  precmd_functions+=(update_terminalapp_cwd)
+  # Run once to get initial cwd set
+  update_terminalapp_cwd
+fi
+;#-- END SOURCE
+#-- SOURCE: /home/raikia/.antigen/repos/https-COLON--SLASH--SLASH-github.com-SLASH-robbyrussell-SLASH-oh-my-zsh.git/lib/theme-and-appearance.zsh
+# ls colors
+autoload -U colors && colors
+
+# Enable ls colors
+export LSCOLORS="Gxfxcxdxbxegedabagacad"
+
+# TODO organise this chaotic logic
+
+if [[ "$DISABLE_LS_COLORS" != "true" ]]; then
+  # Find the option for using colors in ls, depending on the version
+  if [[ "$OSTYPE" == netbsd* ]]; then
+    # On NetBSD, test if "gls" (GNU ls) is installed (this one supports colors);
+    # otherwise, leave ls as is, because NetBSD's ls doesn't support -G
+    gls --color -d . &>/dev/null && alias ls='gls --color=tty'
+  elif [[ "$OSTYPE" == openbsd* ]]; then
+    # On OpenBSD, "gls" (ls from GNU coreutils) and "colorls" (ls from base,
+    # with color and multibyte support) are available from ports.  "colorls"
+    # will be installed on purpose and can't be pulled in by installing
+    # coreutils, so prefer it to "gls".
+    gls --color -d . &>/dev/null && alias ls='gls --color=tty'
+    colorls -G -d . &>/dev/null && alias ls='colorls -G'
+  elif [[ "$OSTYPE" == darwin* ]]; then
+    # this is a good alias, it works by default just using $LSCOLORS
+    ls -G . &>/dev/null && alias ls='ls -G'
+
+    # only use coreutils ls if there is a dircolors customization present ($LS_COLORS or .dircolors file)
+    # otherwise, gls will use the default color scheme which is ugly af
+    [[ -n "$LS_COLORS" || -f "$HOME/.dircolors" ]] && gls --color -d . &>/dev/null && alias ls='gls --color=tty'
+  else
+    # For GNU ls, we use the default ls color theme. They can later be overwritten by themes.
+    if [[ -z "$LS_COLORS" ]]; then
+      (( $+commands[dircolors] )) && eval "$(dircolors -b)"
+    fi
+
+    ls --color -d . &>/dev/null && alias ls='ls --color=tty' || { ls -G . &>/dev/null && alias ls='ls -G' }
+
+    # Take advantage of $LS_COLORS for completion as well.
+    zstyle ':completion:*' list-colors "${(s.:.)LS_COLORS}"
+  fi
+fi
+
+setopt auto_cd
+setopt multios
+setopt prompt_subst
+
+[[ -n "$WINDOW" ]] && SCREEN_NO="%B$WINDOW%b " || SCREEN_NO=""
+
+# Apply theming defaults
+PS1="%n@%m:%~%# "
+
+# git theming default: Variables for theming the git info prompt
+ZSH_THEME_GIT_PROMPT_PREFIX="git:("         # Prefix at the very beginning of the prompt, before the branch name
+ZSH_THEME_GIT_PROMPT_SUFFIX=")"             # At the very end of the prompt
+ZSH_THEME_GIT_PROMPT_DIRTY="*"              # Text to display if the branch is dirty
+ZSH_THEME_GIT_PROMPT_CLEAN=""               # Text to display if the branch is clean
+;#-- END SOURCE
+#-- SOURCE: /home/raikia/.antigen/repos/https-COLON--SLASH--SLASH-github.com-SLASH-robbyrussell-SLASH-oh-my-zsh.git/plugins/git/git.plugin.zsh
+# Query/use custom command for `git`.
+zstyle -s ":vcs_info:git:*:-all-" "command" _omz_git_git_cmd
+: ${_omz_git_git_cmd:=git}
+
+#
+# Functions
+#
+
+# The name of the current branch
+# Back-compatibility wrapper for when this function was defined here in
+# the plugin, before being pulled in to core lib/git.zsh as git_current_branch()
+# to fix the core -> git plugin dependency.
+function current_branch() {
+  git_current_branch
+}
+# The list of remotes
+function current_repository() {
+  if ! $_omz_git_git_cmd rev-parse --is-inside-work-tree &> /dev/null; then
+    return
+  fi
+  echo $($_omz_git_git_cmd remote -v | cut -d':' -f 2)
+}
+# Pretty log messages
+function _git_log_prettily(){
+  if ! [ -z $1 ]; then
+    git log --pretty=$1
+  fi
+}
+# Warn if the current branch is a WIP
+function work_in_progress() {
+  if $(git log -n 1 2>/dev/null | grep -q -c "\-\-wip\-\-"); then
+    echo "WIP!!"
+  fi
+}
+
+#
+# Aliases
+# (sorted alphabetically)
+#
+
+alias g='git'
+
+alias ga='git add'
+alias gaa='git add --all'
+alias gapa='git add --patch'
+alias gau='git add --update'
+
+alias gb='git branch'
+alias gba='git branch -a'
+alias gbd='git branch -d'
+alias gbda='git branch --no-color --merged | command grep -vE "^(\*|\s*(master|develop|dev)\s*$)" | command xargs -n 1 git branch -d'
+alias gbl='git blame -b -w'
+alias gbnm='git branch --no-merged'
+alias gbr='git branch --remote'
+alias gbs='git bisect'
+alias gbsb='git bisect bad'
+alias gbsg='git bisect good'
+alias gbsr='git bisect reset'
+alias gbss='git bisect start'
+
+alias gc='git commit -v'
+alias gc!='git commit -v --amend'
+alias gcn!='git commit -v --no-edit --amend'
+alias gca='git commit -v -a'
+alias gca!='git commit -v -a --amend'
+alias gcan!='git commit -v -a --no-edit --amend'
+alias gcans!='git commit -v -a -s --no-edit --amend'
+alias gcam='git commit -a -m'
+alias gcsm='git commit -s -m'
+alias gcb='git checkout -b'
+alias gcf='git config --list'
+alias gcl='git clone --recursive'
+alias gclean='git clean -fd'
+alias gpristine='git reset --hard && git clean -dfx'
+alias gcm='git checkout master'
+alias gcd='git checkout develop'
+alias gcmsg='git commit -m'
+alias gco='git checkout'
+alias gcount='git shortlog -sn'
+compdef _git gcount
+alias gcp='git cherry-pick'
+alias gcpa='git cherry-pick --abort'
+alias gcpc='git cherry-pick --continue'
+alias gcs='git commit -S'
+
+alias gd='git diff'
+alias gdca='git diff --cached'
+alias gdct='git describe --tags `git rev-list --tags --max-count=1`'
+alias gdt='git diff-tree --no-commit-id --name-only -r'
+alias gdw='git diff --word-diff'
+
+gdv() { git diff -w "$@" | view - }
+compdef _git gdv=git-diff
+
+alias gf='git fetch'
+alias gfa='git fetch --all --prune'
+alias gfo='git fetch origin'
+
+function gfg() { git ls-files | grep $@ }
+compdef _grep gfg
+
+alias gg='git gui citool'
+alias gga='git gui citool --amend'
+
+ggf() {
+  [[ "$#" != 1 ]] && local b="$(git_current_branch)"
+  git push --force origin "${b:=$1}"
+}
+compdef _git ggf=git-checkout
+
+ggl() {
+  if [[ "$#" != 0 ]] && [[ "$#" != 1 ]]; then
+    git pull origin "${*}"
+  else
+    [[ "$#" == 0 ]] && local b="$(git_current_branch)"
+    git pull origin "${b:=$1}"
+  fi
+}
+compdef _git ggl=git-checkout
+
+ggp() {
+  if [[ "$#" != 0 ]] && [[ "$#" != 1 ]]; then
+    git push origin "${*}"
+  else
+    [[ "$#" == 0 ]] && local b="$(git_current_branch)"
+    git push origin "${b:=$1}"
+  fi
+}
+compdef _git ggp=git-checkout
+
+ggpnp() {
+  if [[ "$#" == 0 ]]; then
+    ggl && ggp
+  else
+    ggl "${*}" && ggp "${*}"
+  fi
+}
+compdef _git ggpnp=git-checkout
+
+ggu() {
+  [[ "$#" != 1 ]] && local b="$(git_current_branch)"
+  git pull --rebase origin "${b:=$1}"
+}
+compdef _git ggu=git-checkout
+
+alias ggpur='ggu'
+compdef _git ggpur=git-checkout
+
+alias ggpull='git pull origin $(git_current_branch)'
+compdef _git ggpull=git-checkout
+
+alias ggpush='git push origin $(git_current_branch)'
+compdef _git ggpush=git-checkout
+
+alias ggsup='git branch --set-upstream-to=origin/$(git_current_branch)'
+alias gpsup='git push --set-upstream origin $(git_current_branch)'
+
+alias ghh='git help'
+
+alias gignore='git update-index --assume-unchanged'
+alias gignored='git ls-files -v | grep "^[[:lower:]]"'
+alias git-svn-dcommit-push='git svn dcommit && git push github master:svntrunk'
+compdef _git git-svn-dcommit-push=git
+
+alias gk='\gitk --all --branches'
+compdef _git gk='gitk'
+alias gke='\gitk --all $(git log -g --pretty=%h)'
+compdef _git gke='gitk'
+
+alias gl='git pull'
+alias glg='git log --stat'
+alias glgp='git log --stat -p'
+alias glgg='git log --graph'
+alias glgga='git log --graph --decorate --all'
+alias glgm='git log --graph --max-count=10'
+alias glo='git log --oneline --decorate'
+alias glol="git log --graph --pretty='%Cred%h%Creset -%C(yellow)%d%Creset %s %Cgreen(%cr) %C(bold blue)<%an>%Creset' --abbrev-commit"
+alias glola="git log --graph --pretty='%Cred%h%Creset -%C(yellow)%d%Creset %s %Cgreen(%cr) %C(bold blue)<%an>%Creset' --abbrev-commit --all"
+alias glog='git log --oneline --decorate --graph'
+alias gloga='git log --oneline --decorate --graph --all'
+alias glp="_git_log_prettily"
+compdef _git glp=git-log
+
+alias gm='git merge'
+alias gmom='git merge origin/master'
+alias gmt='git mergetool --no-prompt'
+alias gmtvim='git mergetool --no-prompt --tool=vimdiff'
+alias gmum='git merge upstream/master'
+
+alias gp='git push'
+alias gpd='git push --dry-run'
+alias gpoat='git push origin --all && git push origin --tags'
+compdef _git gpoat=git-push
+alias gpu='git push upstream'
+alias gpv='git push -v'
+
+alias gr='git remote'
+alias gra='git remote add'
+alias grb='git rebase'
+alias grba='git rebase --abort'
+alias grbc='git rebase --continue'
+alias grbi='git rebase -i'
+alias grbm='git rebase master'
+alias grbs='git rebase --skip'
+alias grh='git reset HEAD'
+alias grhh='git reset HEAD --hard'
+alias grmv='git remote rename'
+alias grrm='git remote remove'
+alias grset='git remote set-url'
+alias grt='cd $(git rev-parse --show-toplevel || echo ".")'
+alias gru='git reset --'
+alias grup='git remote update'
+alias grv='git remote -v'
+
+alias gsb='git status -sb'
+alias gsd='git svn dcommit'
+alias gsi='git submodule init'
+alias gsps='git show --pretty=short --show-signature'
+alias gsr='git svn rebase'
+alias gss='git status -s'
+alias gst='git status'
+alias gsta='git stash save'
+alias gstaa='git stash apply'
+alias gstc='git stash clear'
+alias gstd='git stash drop'
+alias gstl='git stash list'
+alias gstp='git stash pop'
+alias gsts='git stash show --text'
+alias gsu='git submodule update'
+
+alias gts='git tag -s'
+alias gtv='git tag | sort -V'
+
+alias gunignore='git update-index --no-assume-unchanged'
+alias gunwip='git log -n 1 | grep -q -c "\-\-wip\-\-" && git reset HEAD~1'
+alias gup='git pull --rebase'
+alias gupv='git pull --rebase -v'
+alias glum='git pull upstream master'
+
+alias gwch='git whatchanged -p --abbrev-commit --pretty=medium'
+alias gwip='git add -A; git rm $(git ls-files --deleted) 2> /dev/null; git commit --no-verify -m "--wip-- [skip ci]"'
+;#-- END SOURCE
+#-- SOURCE: /home/raikia/.antigen/repos/https-COLON--SLASH--SLASH-github.com-SLASH-robbyrussell-SLASH-oh-my-zsh.git/plugins/tmux/tmux.plugin.zsh
+#
+# Aliases
+#
+
+alias ta='tmux attach -t'
+alias tad='tmux attach -d -t'
+alias ts='tmux new-session -s'
+alias tl='tmux list-sessions'
+alias tksv='tmux kill-server'
+alias tkss='tmux kill-session -t'
+
+# Only run if tmux is actually installed
+if which tmux &> /dev/null
+	then
+	# Configuration variables
+	#
+	# Automatically start tmux
+	[[ -n "$ZSH_TMUX_AUTOSTART" ]] || ZSH_TMUX_AUTOSTART=false
+	# Only autostart once. If set to false, tmux will attempt to
+	# autostart every time your zsh configs are reloaded.
+	[[ -n "$ZSH_TMUX_AUTOSTART_ONCE" ]] || ZSH_TMUX_AUTOSTART_ONCE=true
+	# Automatically connect to a previous session if it exists
+	[[ -n "$ZSH_TMUX_AUTOCONNECT" ]] || ZSH_TMUX_AUTOCONNECT=true
+	# Automatically close the terminal when tmux exits
+	[[ -n "$ZSH_TMUX_AUTOQUIT" ]] || ZSH_TMUX_AUTOQUIT=$ZSH_TMUX_AUTOSTART
+	# Set term to screen or screen-256color based on current terminal support
+	[[ -n "$ZSH_TMUX_FIXTERM" ]] || ZSH_TMUX_FIXTERM=true
+	# Set '-CC' option for iTerm2 tmux integration
+	[[ -n "$ZSH_TMUX_ITERM2" ]] || ZSH_TMUX_ITERM2=false
+	# The TERM to use for non-256 color terminals.
+	# Tmux states this should be screen, but you may need to change it on
+	# systems without the proper terminfo
+	[[ -n "$ZSH_TMUX_FIXTERM_WITHOUT_256COLOR" ]] || ZSH_TMUX_FIXTERM_WITHOUT_256COLOR="screen"
+	# The TERM to use for 256 color terminals.
+	# Tmux states this should be screen-256color, but you may need to change it on
+	# systems without the proper terminfo
+	[[ -n "$ZSH_TMUX_FIXTERM_WITH_256COLOR" ]] || ZSH_TMUX_FIXTERM_WITH_256COLOR="screen-256color"
+
+
+	# Get the absolute path to the current directory
+__ZCACHE_FILE_PATH="/home/raikia/.antigen/repos/https-COLON--SLASH--SLASH-github.com-SLASH-robbyrussell-SLASH-oh-my-zsh.git/plugins/tmux/tmux.plugin.zsh"
+	local zsh_tmux_plugin_path="$(cd "$(dirname "$__ZCACHE_FILE_PATH")" && pwd)"
+
+	# Determine if the terminal supports 256 colors
+	if [[ `tput colors` == "256" ]]
+	then
+		export ZSH_TMUX_TERM=$ZSH_TMUX_FIXTERM_WITH_256COLOR
+	else
+		export ZSH_TMUX_TERM=$ZSH_TMUX_FIXTERM_WITHOUT_256COLOR
+	fi
+
+	# Set the correct local config file to use.
+    if [[ "$ZSH_TMUX_ITERM2" == "false" ]] && [[ -f $HOME/.tmux.conf || -h $HOME/.tmux.conf ]]
+	then
+		#use this when they have a ~/.tmux.conf
+		export _ZSH_TMUX_FIXED_CONFIG="$zsh_tmux_plugin_path/tmux.extra.conf"
+	else
+		#use this when they don't have a ~/.tmux.conf
+		export _ZSH_TMUX_FIXED_CONFIG="$zsh_tmux_plugin_path/tmux.only.conf"
+	fi
+
+	# Wrapper function for tmux.
+	function _zsh_tmux_plugin_run()
+	{
+		# We have other arguments, just run them
+		if [[ -n "$@" ]]
+		then
+			\tmux $@
+		# Try to connect to an existing session.
+		elif [[ "$ZSH_TMUX_AUTOCONNECT" == "true" ]]
+		then
+			\tmux `[[ "$ZSH_TMUX_ITERM2" == "true" ]] && echo '-CC '` attach || \tmux `[[ "$ZSH_TMUX_ITERM2" == "true" ]] && echo '-CC '` `[[ "$ZSH_TMUX_FIXTERM" == "true" ]] && echo '-f '$_ZSH_TMUX_FIXED_CONFIG` new-session
+			[[ "$ZSH_TMUX_AUTOQUIT" == "true" ]] && exit
+		# Just run tmux, fixing the TERM variable if requested.
+		else
+			\tmux `[[ "$ZSH_TMUX_ITERM2" == "true" ]] && echo '-CC '` `[[ "$ZSH_TMUX_FIXTERM" == "true" ]] && echo '-f '$_ZSH_TMUX_FIXED_CONFIG`
+			[[ "$ZSH_TMUX_AUTOQUIT" == "true" ]] && exit
+		fi
+	}
+
+	# Use the completions for tmux for our function
+	compdef _tmux _zsh_tmux_plugin_run
+
+	# Alias tmux to our wrapper function.
+	alias tmux=_zsh_tmux_plugin_run
+
+	# Autostart if not already in tmux and enabled.
+	if [[ ! -n "$TMUX" && "$ZSH_TMUX_AUTOSTART" == "true" ]]
+	then
+		# Actually don't autostart if we already did and multiple autostarts are disabled.
+		if [[ "$ZSH_TMUX_AUTOSTART_ONCE" == "false" || "$ZSH_TMUX_AUTOSTARTED" != "true" ]]
+		then
+			export ZSH_TMUX_AUTOSTARTED=true
+			_zsh_tmux_plugin_run
+		fi
+	fi
+else
+	print "zsh tmux plugin: tmux not found. Please install tmux before using this plugin."
+fi
+;#-- END SOURCE
+#-- SOURCE: /home/raikia/.antigen/repos/https-COLON--SLASH--SLASH-github.com-SLASH-robbyrussell-SLASH-oh-my-zsh.git/plugins/colored-man-pages/colored-man-pages.plugin.zsh
+if [[ "$OSTYPE" = solaris* ]]
+then
+	if [[ ! -x "$HOME/bin/nroff" ]]
+	then
+		mkdir -p "$HOME/bin"
+		cat > "$HOME/bin/nroff" <<EOF
+#!/bin/sh
+if [ -n "\$_NROFF_U" -a "\$1,\$2,\$3" = "-u0,-Tlp,-man" ]; then
+	shift
+	exec /usr/bin/nroff -u\$_NROFF_U "\$@"
+fi
+#-- Some other invocation of nroff
+exec /usr/bin/nroff "\$@"
+EOF
+		chmod +x "$HOME/bin/nroff"
+	fi
+fi
+
+man() {
+	env \
+		LESS_TERMCAP_mb=$(printf "\e[1;31m") \
+		LESS_TERMCAP_md=$(printf "\e[1;31m") \
+		LESS_TERMCAP_me=$(printf "\e[0m") \
+		LESS_TERMCAP_se=$(printf "\e[0m") \
+		LESS_TERMCAP_so=$(printf "\e[1;44;33m") \
+		LESS_TERMCAP_ue=$(printf "\e[0m") \
+		LESS_TERMCAP_us=$(printf "\e[1;32m") \
+		PAGER="${commands[less]:-$PAGER}" \
+		_NROFF_U=1 \
+		PATH="$HOME/bin:$PATH" \
+			man "$@"
+}
+;#-- END SOURCE
+#-- SOURCE: /home/raikia/.antigen/repos/https-COLON--SLASH--SLASH-github.com-SLASH-robbyrussell-SLASH-oh-my-zsh.git/plugins/sudo/sudo.plugin.zsh
+# ------------------------------------------------------------------------------
+# Description
+# -----------
+#
+# sudo or sudoedit will be inserted before the command
+#
+# ------------------------------------------------------------------------------
+# Authors
+# -------
+#
+# * Dongweiming <ciici123@gmail.com>
+#
+# ------------------------------------------------------------------------------
+
+sudo-command-line() {
+    [[ -z $BUFFER ]] && zle up-history
+    if [[ $BUFFER == sudo\ * ]]; then
+        LBUFFER="${LBUFFER#sudo }"
+    elif [[ $BUFFER == $EDITOR\ * ]]; then
+        LBUFFER="${LBUFFER#$EDITOR }"
+        LBUFFER="sudoedit $LBUFFER"
+    elif [[ $BUFFER == sudoedit\ * ]]; then
+        LBUFFER="${LBUFFER#sudoedit }"
+        LBUFFER="$EDITOR $LBUFFER"
+    else
+        LBUFFER="sudo $LBUFFER"
+    fi
+}
+zle -N sudo-command-line
+# Defined shortcut keys: [Esc] [Esc]
+bindkey "\e\e" sudo-command-line
+;#-- END SOURCE
+#-- SOURCE: /home/raikia/.antigen/repos/https-COLON--SLASH--SLASH-github.com-SLASH-robbyrussell-SLASH-oh-my-zsh.git/themes/crunch.zsh-theme
+# CRUNCH - created from Steve Eley's cat waxing.
+# Initially hacked from the Dallas theme. Thanks, Dallas Reedy.
+#
+# This theme assumes you do most of your oh-my-zsh'ed "colorful" work at a single machine, 
+# and eschews the standard space-consuming user and hostname info.  Instead, only the 
+# things that vary in my own workflow are shown:
+#
+# * The time (not the date)
+# * The RVM version and gemset (omitting the 'ruby' name if it's MRI)
+# * The current directory
+# * The Git branch and its 'dirty' state
+# 
+# Colors are at the top so you can mess with those separately if you like.
+# For the most part I stuck with Dallas's.
+
+CRUNCH_BRACKET_COLOR="%{$fg[white]%}"
+CRUNCH_TIME_COLOR="%{$fg[yellow]%}"
+CRUNCH_RVM_COLOR="%{$fg[magenta]%}"
+CRUNCH_DIR_COLOR="%{$fg[cyan]%}"
+CRUNCH_GIT_BRANCH_COLOR="%{$fg[green]%}"
+CRUNCH_GIT_CLEAN_COLOR="%{$fg[green]%}"
+CRUNCH_GIT_DIRTY_COLOR="%{$fg[red]%}"
+
+# These Git variables are used by the oh-my-zsh git_prompt_info helper:
+ZSH_THEME_GIT_PROMPT_PREFIX="$CRUNCH_BRACKET_COLOR:$CRUNCH_GIT_BRANCH_COLOR"
+ZSH_THEME_GIT_PROMPT_SUFFIX=""
+ZSH_THEME_GIT_PROMPT_CLEAN=" $CRUNCH_GIT_CLEAN_COLOR✓"
+ZSH_THEME_GIT_PROMPT_DIRTY=" $CRUNCH_GIT_DIRTY_COLOR✗"
+
+# Our elements:
+CRUNCH_TIME_="$CRUNCH_BRACKET_COLOR{$CRUNCH_TIME_COLOR%T$CRUNCH_BRACKET_COLOR}%{$reset_color%}"
+if [ -e ~/.rvm/bin/rvm-prompt ]; then
+  CRUNCH_RVM_="$CRUNCH_BRACKET_COLOR"["$CRUNCH_RVM_COLOR\${\$(~/.rvm/bin/rvm-prompt i v g)#ruby-}$CRUNCH_BRACKET_COLOR"]"%{$reset_color%}"
+else
+  if which rbenv &> /dev/null; then
+    CRUNCH_RVM_="$CRUNCH_BRACKET_COLOR"["$CRUNCH_RVM_COLOR\${\$(rbenv version | sed -e 's/ (set.*$//' -e 's/^ruby-//')}$CRUNCH_BRACKET_COLOR"]"%{$reset_color%}"
+  fi
+fi
+CRUNCH_DIR_="$CRUNCH_DIR_COLOR%~\$(git_prompt_info) "
+CRUNCH_PROMPT="$CRUNCH_BRACKET_COLOR➭ "
+
+# Put it all together!
+PROMPT="$CRUNCH_TIME_$CRUNCH_RVM_$CRUNCH_DIR_$CRUNCH_PROMPT%{$reset_color%}"
+;#-- END SOURCE
+fpath+=(/home/raikia/.antigen/repos/https-COLON--SLASH--SLASH-github.com-SLASH-zsh-users-SLASH-zsh-syntax-highlighting.git// /home/raikia/.antigen/repos/https-COLON--SLASH--SLASH-github.com-SLASH-zsh-users-SLASH-zsh-completions.git// /home/raikia/.antigen/repos/https-COLON--SLASH--SLASH-github.com-SLASH-zsh-users-SLASH-zsh-autosuggestions.git// /home/raikia/.antigen/repos/https-COLON--SLASH--SLASH-github.com-SLASH-zsh-users-SLASH-zsh-history-substring-search.git// /home/raikia/.antigen/repos/https-COLON--SLASH--SLASH-github.com-SLASH-HeroCC-SLASH-LS_COLORS.git// /home/raikia/.antigen/repos/https-COLON--SLASH--SLASH-github.com-SLASH-robbyrussell-SLASH-oh-my-zsh.git/lib /home/raikia/.antigen/repos/https-COLON--SLASH--SLASH-github.com-SLASH-robbyrussell-SLASH-oh-my-zsh.git/plugins/git /home/raikia/.antigen/repos/https-COLON--SLASH--SLASH-github.com-SLASH-robbyrussell-SLASH-oh-my-zsh.git/plugins/tmux /home/raikia/.antigen/repos/https-COLON--SLASH--SLASH-github.com-SLASH-robbyrussell-SLASH-oh-my-zsh.git/plugins/colored-man-pages /home/raikia/.antigen/repos/https-COLON--SLASH--SLASH-github.com-SLASH-robbyrussell-SLASH-oh-my-zsh.git/plugins/sudo)
+unset __ZCACHE_FILE_PATH
+export _ANTIGEN_BUNDLE_RECORD="
+https://github.com/zsh-users/zsh-syntax-highlighting.git / plugin true 
+https://github.com/zsh-users/zsh-completions.git / plugin true 
+https://github.com/zsh-users/zsh-autosuggestions.git / plugin true 
+https://github.com/zsh-users/zsh-history-substring-search.git / plugin true 
+https://github.com/HeroCC/LS_COLORS.git / plugin true 
+https://github.com/robbyrussell/oh-my-zsh.git lib plugin true 
+https://github.com/robbyrussell/oh-my-zsh.git plugins/git plugin true 
+https://github.com/robbyrussell/oh-my-zsh.git plugins/tmux plugin true 
+https://github.com/robbyrussell/oh-my-zsh.git plugins/colored-man-pages plugin true 
+https://github.com/robbyrussell/oh-my-zsh.git plugins/sudo plugin true 
+https://github.com/robbyrussell/oh-my-zsh.git themes/crunch.zsh-theme theme true "
+export _ZCACHE_CACHE_LOADED=true
+export _ZCACHE_CACHE_VERSION=v1.3.5
+#-- END ZCACHE GENERATED FILE
+
