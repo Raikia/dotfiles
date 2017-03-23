@@ -21,7 +21,19 @@ chatnets = {
 };
 
 channels = (
-  { name = "#metasploit"; chatnet = "Freenode"; autojoin = "yes"; }
+  { name = "#metasploit"; chatnet = "Freenode"; autojoin = "yes"; },
+  { name = "##security"; chatnet = "Freenode"; autojoin = "yes"; },
+  { name = "##php"; chatnet = "Freenode"; autojoin = "yes"; },
+  { name = "#python"; chatnet = "Freenode"; autojoin = "yes"; },
+  { name = "#archlinux"; chatnet = "Freenode"; autojoin = "yes"; },
+  { name = "#armitage"; chatnet = "Freenode"; autojoin = "yes"; },
+  { name = "#veil"; chatnet = "Freenode"; autojoin = "yes"; },
+  { name = "#r_netsec"; chatnet = "Freenode"; autojoin = "yes"; },
+  { 
+    name = "#backtrack-linux";
+    chatnet = "Freenode";
+    autojoin = "yes";
+  }
 );
 
 aliases = {
@@ -274,10 +286,25 @@ statusbar = {
         topicbarend = { priority = "100"; alignment = "right"; };
       };
     };
+    awl_0 = {
+      items = {
+        barstart = { priority = "100"; };
+        awl_0 = { };
+        barend = { priority = "100"; alignment = "right"; };
+      };
+    };
+    awl_1 = {
+      items = {
+        barstart = { priority = "100"; };
+        awl_1 = { };
+        barend = { priority = "100"; alignment = "right"; };
+      };
+    };
   };
 };
 settings = {
   core = { real_name = "Unknown"; user_name = "raikia"; nick = "raikia"; };
   "fe-text" = { actlist_sort = "refnum"; };
+  "perl/core/scripts" = { awl_shared_sbar = "OFF"; awl_viewer = "no"; };
   "fe-common/core" = { theme = "weed"; };
 };
