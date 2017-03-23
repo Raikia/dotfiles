@@ -1,0 +1,14 @@
+formats = {
+  "fe-common/irc" = {
+    chanmode_change = "%Ymode/%y{channel $0} %Y{mode $1} by {nick $2}";
+    server_chanmode_change = "{netsplit ServerMode}/{channelhilight $0}: {mode $1} by {nick $2}";
+    whois = "{nick $0} {nickhost $1@$2}%: ircname : $3";
+  };
+  "fe-common/core" = {
+    join = "%g{channick_hilight $0} {chanhost_hilight $1} has joined %G{channel $2}";
+    part = "%r{channick $0} {chanhost $1} has left %R{channel $2}%r {reason $3}";
+    kick = "%r{channick $0} was kicked from %R{channel $1}%r by {nick $2} {reason $3}";
+    quit = "%r{channick $0} {chanhost $1} has quit {reason $2}";
+    pubmsg = "{pubmsgnick $2 {pubnick \00302$0}}$1";
+  };
+};
