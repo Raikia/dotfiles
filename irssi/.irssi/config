@@ -13,7 +13,6 @@ chatnets = {
   Freenode = {
     type = "IRC";
     nick = "raikia";
-    autosendcmd = "/msg nickserv identify fishisgood ;wait 2000";
     max_kicks = "1";
     max_msgs = "4";
     max_whois = "1";
